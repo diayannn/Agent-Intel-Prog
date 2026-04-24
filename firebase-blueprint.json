@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "position": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "teacher", "mis"] },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "teachers": {
+      "title": "Teacher",
+      "description": "Information about teachers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "title": { "type": "string" },
+        "email": { "type": "string" },
+        "specialization": { "type": "string" }
+      },
+      "required": ["id", "name", "email"]
+    },
+    "students": {
+      "title": "Student",
+      "description": "Information about students",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "sectionId": { "type": "string" }
+      },
+      "required": ["id", "name", "email"]
+    },
+    "sections": {
+      "title": "Class Section",
+      "description": "Information about class sections",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "programmingTeacherId": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "studyPlans": {
+      "title": "Study Plan",
+      "description": "Generated study plan for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "planText": { "type": "string" },
+        "syllabusName": { "type": "string" },
+        "calendarName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "planText"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User profile data"
+    },
+    "/users/{userId}/studyPlans/{planId}": {
+      "schema": "studyPlans",
+      "description": "User's study plans"
+    },
+    "/teachers/{teacherId}": {
+      "schema": "teachers",
+      "description": "Teacher records"
+    },
+    "/students/{studentId}": {
+      "schema": "students",
+      "description": "Student records"
+    },
+    "/sections/{sectionId}": {
+      "schema": "sections",
+      "description": "Class sections"
+    }
+  }
+}

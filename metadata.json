@@ -1,0 +1,5 @@
+{
+  "name": "AgentIntelProg (AIP)",
+  "description": "An adaptive learning platform using Agentic AI to help BSIT students master Computer Programming 1 through personalized paths and activities.",
+  "requestFramePermissions": []
+}

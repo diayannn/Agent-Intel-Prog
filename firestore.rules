@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isMIS() {
+      return isAuthenticated() &&
+        (getUserData().role == 'mis' ||
+          (request.auth.token.email == "MIStest373@gmail.com") ||
+          (request.auth.token.email == "dianegrace.0103@gmail.com"));
+    }
+
+    function isTeacher() {
+      return isAuthenticated() &&
+        (getUserData().role == 'teacher' || 
+          request.auth.token.email == "estherreyes012@gmail.com");
+    }
+
+    function isAdmin() {
+      return isMIS() || isTeacher();
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.displayName is string &&
+             data.role in ['student', 'teacher', 'mis'];
+    }
+
+    function isValidTeacher(data) {
+      return data.keys().hasAll(['id', 'name', 'email']) &&
+             data.id is string &&
+             data.name is string &&
+             data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string;
+    }
+
+    function isValidStudent(data) {
+      return data.keys().hasAll(['id', 'name', 'email']) &&
+             data.id is string &&
+             data.name is string &&
+             data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string;
+    }
+
+    function isValidSection(data) {
+      return data.keys().hasAll(['id', 'name']) &&
+             data.id is string &&
+             data.name is string &&
+             data.name.size() > 0 && data.name.size() < 100;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isMIS() || isTeacher();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
+                    (request.resource.data.role == 'student' || 
+                     request.auth.token.email == "estherreyes012@gmail.com" ||
+                     isMIS());
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role) || isMIS();
+      
+      match /studyPlans/{planId} {
+        allow read, write: if isOwner(userId) || isMIS();
+      }
+    }
+
+    match /teachers/{teacherId} {
+      allow read: if isAuthenticated();
+      allow write: if isMIS();
+    }
+
+    match /students/{studentId} {
+      allow read: if isAuthenticated();
+      allow write: if isMIS();
+    }
+
+    match /sections/{sectionId} {
+      allow read: if isAuthenticated();
+      allow write: if isMIS();
+    }
+  }
+}
