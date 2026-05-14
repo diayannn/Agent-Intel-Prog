@@ -20,8 +20,8 @@ service cloud.firestore {
     function isMIS() {
       return isAuthenticated() &&
         (getUserData().role == 'mis' ||
-          (request.auth.token.email == "MIStest373@gmail.com") ||
-          (request.auth.token.email == "dianegrace.0103@gmail.com"));
+          (request.auth.token.email.lower() == "mistest373@gmail.com") ||
+          (request.auth.token.email.lower() == "dianegrace.0103@gmail.com"));
     }
 
     function isTeacher() {
@@ -58,11 +58,46 @@ service cloud.firestore {
              data.email is string;
     }
 
+    function isValidAcademicYear(data) {
+      return data.keys().hasAll(['id', 'date']) &&
+             data.id is number &&
+             data.date is string;
+    }
+
+    function isValidSemester(data) {
+      return data.keys().hasAll(['id', 'half']) &&
+             data.id is number &&
+             data.half is string;
+    }
+
+    function isValidInstitutionUser(data) {
+      return data.keys().hasAll(['id', 'lastName', 'firstName', 'email', 'role']) &&
+             data.id is number &&
+             data.lastName is string &&
+             data.firstName is string &&
+             data.email is string &&
+             data.role in ['Student', 'Teacher', 'MIS'];
+    }
+
+    function isValidClass(data) {
+      return data.keys().hasAll(['id', 'academicYearId', 'semesterId', 'sectionId', 'userId']) &&
+             data.id is number &&
+             data.academicYearId is number &&
+             data.semesterId is number &&
+             data.sectionId is number &&
+             data.userId is number;
+    }
+
+    function isValidClassUser(data) {
+      return data.keys().hasAll(['classId', 'userId']) &&
+             data.classId is number &&
+             data.userId is number;
+    }
+
     function isValidSection(data) {
       return data.keys().hasAll(['id', 'name']) &&
-             data.id is string &&
-             data.name is string &&
-             data.name.size() > 0 && data.name.size() < 100;
+             data.id is number &&
+             data.name is string;
     }
 
     // ===============================================================
@@ -82,19 +117,40 @@ service cloud.firestore {
       }
     }
 
-    match /teachers/{teacherId} {
+    match /academicYears/{yearId} {
       allow read: if isAuthenticated();
-      allow write: if isMIS();
+      allow create, update: if isMIS() && isValidAcademicYear(request.resource.data);
+      allow delete: if isMIS();
     }
 
-    match /students/{studentId} {
+    match /semesters/{semesterId} {
       allow read: if isAuthenticated();
-      allow write: if isMIS();
+      allow create, update: if isMIS() && isValidSemester(request.resource.data);
+      allow delete: if isMIS();
+    }
+
+    match /institutionUsers/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isMIS() && isValidInstitutionUser(request.resource.data);
+      allow delete: if isMIS();
     }
 
     match /sections/{sectionId} {
       allow read: if isAuthenticated();
-      allow write: if isMIS();
+      allow create, update: if isMIS() && isValidSection(request.resource.data);
+      allow delete: if isMIS();
+    }
+
+    match /classes/{classId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isMIS() && isValidClass(request.resource.data);
+      allow delete: if isMIS();
+    }
+
+    match /classUsers/{linkId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isMIS() && isValidClassUser(request.resource.data);
+      allow delete: if isMIS();
     }
   }
 }

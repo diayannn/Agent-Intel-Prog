@@ -14,41 +14,73 @@
       },
       "required": ["uid", "email"]
     },
-    "teachers": {
-      "title": "Teacher",
-      "description": "Information about teachers",
+    "academicYears": {
+      "title": "Academic Year",
+      "description": "Educational year records",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "title": { "type": "string" },
-        "email": { "type": "string" },
-        "specialization": { "type": "string" }
+        "id": { "type": "number" },
+        "date": { "type": "string" }
       },
-      "required": ["id", "name", "email"]
+      "required": ["id", "date"]
     },
-    "students": {
-      "title": "Student",
-      "description": "Information about students",
+    "semesters": {
+      "title": "Semester",
+      "description": "School terms/semesters",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "email": { "type": "string" },
-        "sectionId": { "type": "string" }
+        "id": { "type": "number" },
+        "half": { "type": "string" }
       },
-      "required": ["id", "name", "email"]
+      "required": ["id", "half"]
+    },
+    "institutionUsers": {
+      "title": "Institution User",
+      "description": "Records of all students, teachers, and MIS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "lastName": { "type": "string" },
+        "firstName": { "type": "string" },
+        "middleName": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["Student", "Teacher", "MIS"] }
+      },
+      "required": ["id", "lastName", "firstName", "email", "role"]
     },
     "sections": {
-      "title": "Class Section",
-      "description": "Information about class sections",
+      "title": "Section",
+      "description": "Class sections",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "programmingTeacherId": { "type": "string" }
+        "id": { "type": "number" },
+        "name": { "type": "string" }
       },
       "required": ["id", "name"]
+    },
+    "classes": {
+      "title": "Class",
+      "description": "Class assignments linking years, semesters, and teachers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "academicYearId": { "type": "number" },
+        "semesterId": { "type": "number" },
+        "sectionId": { "type": "number" },
+        "userId": { "type": "number" }
+      },
+      "required": ["id", "academicYearId", "semesterId", "sectionId", "userId"]
+    },
+    "classUsers": {
+      "title": "Class User",
+      "description": "Links students to specific classes",
+      "type": "object",
+      "properties": {
+        "classId": { "type": "number" },
+        "userId": { "type": "number" }
+      },
+      "required": ["classId", "userId"]
     },
     "studyPlans": {
       "title": "Study Plan",
@@ -73,17 +105,29 @@
       "schema": "studyPlans",
       "description": "User's study plans"
     },
-    "/teachers/{teacherId}": {
-      "schema": "teachers",
-      "description": "Teacher records"
+    "/academicYears/{yearId}": {
+      "schema": "academicYears",
+      "description": "Academic year records"
     },
-    "/students/{studentId}": {
-      "schema": "students",
-      "description": "Student records"
+    "/semesters/{semesterId}": {
+      "schema": "semesters",
+      "description": "Semester records"
+    },
+    "/institutionUsers/{userId}": {
+      "schema": "institutionUsers",
+      "description": "Institutional user records"
     },
     "/sections/{sectionId}": {
       "schema": "sections",
       "description": "Class sections"
+    },
+    "/classes/{classId}": {
+      "schema": "classes",
+      "description": "Class assignments"
+    },
+    "/classUsers/{linkId}": {
+      "schema": "classUsers",
+      "description": "Student class assignments"
     }
   }
 }
