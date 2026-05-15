@@ -94,6 +94,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "planText"]
+    },
+    "resources": {
+      "title": "Resource",
+      "description": "Educational resources like syllabus or calendar files",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "size": { "type": "string" },
+        "date": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string", "enum": ["Modules", "Course Outline", "Videos"] },
+        "ownerId": { "type": "string" },
+        "section": { "type": "string" }
+      },
+      "required": ["name", "type", "content", "category", "size", "ownerId", "date"]
     }
   },
   "firestore": {
@@ -128,6 +144,10 @@
     "/classUsers/{linkId}": {
       "schema": "classUsers",
       "description": "Student class assignments"
+    },
+    "/resources/{resourceId}": {
+      "schema": "resources",
+      "description": "Educational resource files"
     }
   }
 }

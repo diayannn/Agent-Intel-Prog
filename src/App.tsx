@@ -4,7 +4,6 @@
  */
 
 import { useState, useRef, useEffect } from "react";
-import { GoogleGenAI } from "@google/genai";
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -48,6 +47,7 @@ import {
   Library,
   ClipboardCheck,
   Plus,
+  Copy,
   ArrowLeft,
   ArrowRight,
   ChevronLeft,
@@ -79,7 +79,8 @@ import {
   Shield,
   ShieldCheck,
   Group,
-  UserCheck
+  UserCheck,
+  Maximize2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import ReactMarkdown from "react-markdown";
@@ -289,6 +290,8 @@ const LoginView = ({ onLoginSuccess, onAdminLogin, addNotification }: { onLoginS
     setLoading(true);
     setError(null);
 
+    const cleanEmail = email.trim();
+
     if (isRegistering && password !== confirmPassword) {
       setError("Passwords do not match.");
       setLoading(false);
@@ -297,36 +300,43 @@ const LoginView = ({ onLoginSuccess, onAdminLogin, addNotification }: { onLoginS
 
     try {
       if (isRegistering) {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
         const user = userCredential.user;
-        await updateProfile(user, { displayName: `${firstName} ${lastName}` });
+        await updateProfile(user, { displayName: `${lastName}, ${firstName}` });
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           email: user.email,
           firstName,
           lastName,
-          displayName: `${firstName} ${lastName}`,
+          displayName: `${lastName}, ${firstName}`,
           role: "student",
           createdAt: new Date().toISOString()
         });
       } else {
         // Special case for the requested Student test account
         try {
-          await signInWithEmailAndPassword(auth, email, password);
+          await signInWithEmailAndPassword(auth, cleanEmail, password);
         } catch (signInErr: any) {
-          if (email === "paulino134@gmail.com" && (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential')) {
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            const user = userCredential.user;
-            await updateProfile(user, { displayName: "Student Profile" });
-            await setDoc(doc(db, "users", user.uid), {
-              uid: user.uid,
-              email: user.email,
-              firstName: "Student",
-              lastName: "Profile",
-              displayName: "Student Profile",
-              role: "student",
-              createdAt: new Date().toISOString()
-            });
+          if (cleanEmail === "paulino134@gmail.com" && (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential')) {
+            try {
+              const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+              const user = userCredential.user;
+              await updateProfile(user, { displayName: "Paulino, Diane" });
+              await setDoc(doc(db, "users", user.uid), {
+                uid: user.uid,
+                email: user.email,
+                firstName: "Diane",
+                lastName: "Paulino",
+                displayName: "Paulino, Diane",
+                role: "student",
+                section: "BSIT - 1A",
+                teacher: "Ms. Esther Reyes",
+                createdAt: new Date().toISOString()
+              });
+            } catch (createErr: any) {
+              // If creation fails (e.g. user actually exists), throw original sign-in error
+              throw signInErr;
+            }
           } else {
             throw signInErr;
           }
@@ -334,14 +344,22 @@ const LoginView = ({ onLoginSuccess, onAdminLogin, addNotification }: { onLoginS
       }
 
       if (rememberMe) {
-        localStorage.setItem("remembered_email", email);
+        localStorage.setItem("remembered_email", cleanEmail);
       } else {
         localStorage.removeItem("remembered_email");
       }
 
       onLoginSuccess();
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'auth/invalid-credential') {
+        setError("Invalid email or password. Please verify your credentials.");
+      } else if (err.code === 'auth/user-not-found') {
+        setError("User account not found. Please register first.");
+      } else if (err.code === 'auth/wrong-password') {
+        setError("Incorrect password.");
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -353,23 +371,25 @@ const LoginView = ({ onLoginSuccess, onAdminLogin, addNotification }: { onLoginS
     setLoading(true);
     setError(null);
 
+    const cleanAdminEmail = adminEmail.trim();
+
     try {
       // Special case for the requested MIS Admin account
       // We try to sign in first.
       let user;
       try {
-        const userCredential = await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
+        const userCredential = await signInWithEmailAndPassword(auth, cleanAdminEmail, adminPassword);
         user = userCredential.user;
       } catch (signInErr: any) {
         // If sign in fails and it's our special account, try to create it if it doesn't exist
-        const isSpecialAccount = adminEmail === "MIStest373@gmail.com" || adminEmail === "estherreyes012@gmail.com";
+        const isSpecialAccount = cleanAdminEmail === "MIStest373@gmail.com" || cleanAdminEmail === "estherreyes012@gmail.com";
         const isUserNotFound = signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential' || signInErr.code === 'auth/user-disabled';
         
         if (isSpecialAccount && isUserNotFound) {
           try {
-            const userCredential = await createUserWithEmailAndPassword(auth, adminEmail, adminPassword);
+            const userCredential = await createUserWithEmailAndPassword(auth, cleanAdminEmail, adminPassword);
             user = userCredential.user;
-            const displayName = adminEmail === "MIStest373@gmail.com" ? "John Santos" : "Ms. Esther Reyes";
+            const displayName = cleanAdminEmail === "MIStest373@gmail.com" ? "John Santos" : "Ms. Esther Reyes";
             await updateProfile(user, { displayName });
           } catch (createErr: any) {
             // If creation fails because it exists, then the password was probably just wrong
@@ -386,7 +406,7 @@ const LoginView = ({ onLoginSuccess, onAdminLogin, addNotification }: { onLoginS
       if (!user) throw new Error("Authentication failed");
       
       if (adminRememberMe) {
-        localStorage.setItem("remembered_admin_email", adminEmail);
+        localStorage.setItem("remembered_admin_email", cleanAdminEmail);
       } else {
         localStorage.removeItem("remembered_admin_email");
       }
@@ -609,15 +629,6 @@ const LoginView = ({ onLoginSuccess, onAdminLogin, addNotification }: { onLoginS
                 </form>
 
                 <div className="mt-8 text-center space-y-4">
-                  <button 
-                    onClick={() => {
-                      setIsRegistering(!isRegistering);
-                      setError(null);
-                    }}
-                    className="text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors block w-full"
-                  >
-                    {isRegistering ? "Already have an account? Sign In" : "Don't have an account? Create one"}
-                  </button>
                   <button 
                     onClick={() => {
                       setActivePortal(null);
@@ -888,6 +899,18 @@ const DashboardView = ({
             <p className="text-slate-500 text-xs md:text-sm max-w-md mb-6 md:mb-8 leading-relaxed">
               Review your progress and continue your tasks with your personalized study plan.
             </p>
+            <div className="flex flex-wrap gap-4 mb-6 md:mb-8">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Section</span>
+                <span className="text-sm font-black text-slate-700">{userProfile?.section || "BSIT - 1A"}</span>
+              </div>
+              <div className="w-px h-8 bg-slate-100 mx-1" />
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Teacher</span>
+                <span className="text-sm font-black text-indigo-600">{userProfile?.teacher || "Ms. Esther Reyes"}</span>
+              </div>
+            </div>
+
             <div className="flex flex-wrap gap-3">
               <button 
                 onClick={() => onNavigate("path")}
@@ -1559,17 +1582,33 @@ const StudyPlanView = ({
   );
 };
 
-const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { userProfile: any, activeTab: any, setActiveTab: any, addNotification: any }) => {
+const MISView = ({ 
+  userProfile, 
+  activeTab, 
+  setActiveTab, 
+  addNotification,
+  academicYears,
+  semesters,
+  users,
+  sections,
+  classes,
+  classUsers
+}: { 
+  userProfile: any, 
+  activeTab: any, 
+  setActiveTab: any, 
+  addNotification: any,
+  academicYears: any[],
+  semesters: any[],
+  users: any[],
+  sections: any[],
+  classes: any[],
+  classUsers: any[]
+}) => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{ table: string, id: any } | null>(null);
   const [dependencyWarning, setDependencyWarning] = useState<string | null>(null);
 
-  const [academicYears, setAcademicYears] = useState<any[]>([]);
-  const [semesters, setSemesters] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-  const [sections, setSections] = useState<any[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
-  const [classUsers, setClassUsers] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Function to sync a single user to Auth
@@ -1585,7 +1624,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
         body: JSON.stringify({
           email: finalEmail,
           password: defaultPassword,
-          displayName: `${user.firstName} ${user.lastName}`,
+          displayName: user.role === "Student" ? `${user.lastName}, ${user.firstName}` : `${user.firstName} ${user.lastName}`,
           role: user.role
         })
       });
@@ -1620,7 +1659,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
           body: JSON.stringify({
             email: finalEmail,
             password: defaultPassword,
-            displayName: `${u.firstName} ${u.lastName}`,
+            displayName: u.role === "Student" ? `${u.lastName}, ${u.firstName}` : `${u.firstName} ${u.lastName}`,
             role: u.role
           })
         });
@@ -1655,12 +1694,43 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
   useEffect(() => {
     // Seed pre-existing users if they don't exist
     const seedUsers = async () => {
+      // 1. Seed Academic Year
+      let yearId = "";
+      const yearFound = academicYears.find(y => y.name === "2024-2025");
+      if (!yearFound && academicYears.length > 0) {
+        yearId = "2425";
+        await setDoc(doc(db, "academicYears", yearId), { id: yearId, name: "2024-2025", start: "2024-08-01", end: "2025-05-31" });
+      } else if (yearFound) {
+        yearId = yearFound.id;
+      }
+
+      // 2. Seed Semester
+      let semId = "";
+      const semFound = semesters.find(s => s.name === "1st Semester");
+      if (!semFound && semesters.length > 0) {
+        semId = "sem1";
+        await setDoc(doc(db, "semesters", semId), { id: semId, name: "1st Semester", start: "2024-08-01", end: "2024-12-20" });
+      } else if (semFound) {
+        semId = semFound.id;
+      }
+
+      // 3. Seed Section
+      let sectionId = "";
+      const sectionFound = sections.find(s => s.name === "BSIT101");
+      if (!sectionFound && sections.length > 0) {
+        sectionId = "bsit101";
+        await setDoc(doc(db, "sections", sectionId), { id: sectionId, name: "BSIT101", course: "BSIT", yearLevel: "1" });
+      } else if (sectionFound) {
+        sectionId = sectionFound.id;
+      }
+
+      // 4. Seed Teacher
       const teacherEmail = "estherreyes012@gmail.com";
-      // Check if teacher exists
       const teacherFound = users.find(u => u.email === teacherEmail);
+      let teacherUserId = "";
       if (!teacherFound && users.length > 0) {
-        const idNum = parseInt("4" + Math.random().toString().slice(2, 8));
-        const idStr = idNum.toString();
+        const idNum = 400001;
+        teacherUserId = idNum.toString();
         const teacherData = {
           id: idNum,
           lastName: "Reyes",
@@ -1671,24 +1741,95 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
           role: "Teacher"
         };
         try {
-          await setDoc(doc(db, "institutionUsers", idStr), teacherData);
+          await setDoc(doc(db, "institutionUsers", teacherUserId), teacherData);
           await syncUserToAuth(teacherData);
         } catch (e) {
           console.error("Seed teacher failed", e);
+        }
+      } else if (teacherFound) {
+        teacherUserId = teacherFound.id.toString();
+      }
+
+      // 5. Seed Student (Diane Paulino)
+      const studentEmail = "paulino134@gmail.com";
+      const studentFound = users.find(u => u.email === studentEmail);
+      let studentUserId = "";
+      if (!studentFound && users.length > 0) {
+        const idNum = 2024134;
+        studentUserId = idNum.toString();
+        const studentData = {
+          id: idNum,
+          lastName: "Paulino",
+          firstName: "Diane",
+          middleName: "",
+          email: studentEmail,
+          password: "ChangeMe123!",
+          role: "Student",
+          section: "BSIT101"
+        };
+        try {
+          await setDoc(doc(db, "institutionUsers", studentUserId), studentData);
+          await syncUserToAuth(studentData);
+        } catch (e) {
+          console.error("Seed student failed", e);
+        }
+      } else if (studentFound) {
+        studentUserId = studentFound.id.toString();
+      }
+
+      // 6. Seed Class (Link Teacher to Section)
+      if (teacherUserId && sectionId && yearId && semId && classes.length > 0) {
+        const classFound = classes.find(c => 
+          c.userId.toString() === teacherUserId && 
+          c.sectionId === sectionId && 
+          c.academicYearId === yearId && 
+          c.semesterId === semId
+        );
+        let classId = "";
+        if (!classFound) {
+          classId = `class_${teacherUserId}_${sectionId}`;
+          await setDoc(doc(db, "classes", classId), {
+            id: classId,
+            userId: teacherUserId,
+            sectionId: sectionId,
+            academicYearId: yearId,
+            semesterId: semId,
+            subjectCode: "IT101",
+            subjectTitle: "Introduction to Programming"
+          });
+        } else {
+          classId = classFound.id;
+        }
+
+        // 7. Seed ClassUser (Link Student to Class)
+        if (studentUserId && classId && classUsers.length > 0) {
+          const classUserFound = classUsers.find(cu => 
+            cu.userId.toString() === studentUserId && 
+            cu.classId === classId
+          );
+          if (!classUserFound) {
+            const classUserId = `enroll_${studentUserId}_${classId}`;
+            await setDoc(doc(db, "classUsers", classUserId), {
+              id: classUserId,
+              classId: classId,
+              userId: studentUserId,
+              role: "Student"
+            });
+          }
         }
       }
 
       // Check if John Santos exists
       const misFound = users.find(u => u.lastName === "Santos" && u.firstName === "John");
       if (!misFound && users.length > 0) {
-        const idNum = parseInt("2" + Math.random().toString().slice(2, 8));
+        const idNum = 200001;
         const idStr = idNum.toString();
         const misData = {
           id: idNum,
           lastName: "Santos",
           firstName: "John",
           middleName: "",
-          email: `santos.${idStr}@gmail.com`,
+          email: "MIStest373@gmail.com",
           password: "ChangeMe123!",
           role: "MIS"
         };
@@ -1706,82 +1847,30 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
     }
   }, [users]);
 
-  useEffect(() => {
-    const unsubYears = onSnapshot(collection(db, "academicYears"), 
-      (snap) => setAcademicYears(snap.docs.map(d => {
-        const data = d.data();
-        return { ...data, id: data.id || d.id };
-      })),
-      (err) => handleFirestoreError(err, OperationType.LIST, "academicYears")
-    );
-    const unsubSemesters = onSnapshot(collection(db, "semesters"), 
-      (snap) => setSemesters(snap.docs.map(d => {
-        const data = d.data();
-        return { ...data, id: data.id || d.id };
-      })),
-      (err) => handleFirestoreError(err, OperationType.LIST, "semesters")
-    );
-    const unsubUsers = onSnapshot(collection(db, "institutionUsers"), 
-      (snap) => {
-        const allUsers = snap.docs.map(d => {
-          const data = d.data();
-          return { ...data, id: data.id || d.id };
-        });
-        setUsers(allUsers);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, "institutionUsers")
-    );
-    const unsubSections = onSnapshot(collection(db, "sections"), 
-      (snap) => setSections(snap.docs.map(d => {
-        const data = d.data();
-        return { ...data, id: data.id || d.id };
-      })),
-      (err) => handleFirestoreError(err, OperationType.LIST, "sections")
-    );
-    const unsubClasses = onSnapshot(collection(db, "classes"), 
-      (snap) => setClasses(snap.docs.map(d => {
-        const data = d.data();
-        return { ...data, id: data.id || d.id };
-      })),
-      (err) => handleFirestoreError(err, OperationType.LIST, "classes")
-    );
-    const unsubClassUsers = onSnapshot(collection(db, "classUsers"), 
-      (snap) => setClassUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-      (err) => handleFirestoreError(err, OperationType.LIST, "classUsers")
-    );
-
-    return () => {
-      unsubYears();
-      unsubSemesters();
-      unsubUsers();
-      unsubSections();
-      unsubClasses();
-      unsubClassUsers();
-    };
-  }, []);
-
+  // Synchronized data is provided via props from App level
+  
   const handleDelete = (table: string, id: any) => {
     const docId = typeof id === "object" ? id.id : id;
     const numId = Number(docId);
     let warning = null;
 
     if (table === "academicYear") {
-      const count = classes.filter(c => Number(c.academicYearId) === numId).length;
+      const count = classes.filter(c => String(c.academicYearId) === String(docId)).length;
       if (count > 0) warning = `Used by ${count} Classes.`;
     } else if (table === "semester") {
-      const count = classes.filter(c => Number(c.semesterId) === numId).length;
+      const count = classes.filter(c => String(c.semesterId) === String(docId)).length;
       if (count > 0) warning = `Used by ${count} Classes.`;
     } else if (table === "user") {
-      const classCount = classes.filter(c => Number(c.userId) === numId).length;
-      const classUserCount = classUsers.filter(cu => Number(cu.userId) === numId).length;
+      const classCount = classes.filter(c => String(c.userId) === String(docId)).length;
+      const classUserCount = classUsers.filter(cu => String(cu.userId) === String(docId)).length;
       if (classCount > 0 || classUserCount > 0) {
         warning = `Used by ${classCount} Classes and ${classUserCount} Class Student links.`;
       }
     } else if (table === "section") {
-      const count = classes.filter(c => Number(c.sectionId) === numId).length;
+      const count = classes.filter(c => String(c.sectionId) === String(docId)).length;
       if (count > 0) warning = `Used by ${count} Classes.`;
     } else if (table === "class") {
-      const count = classUsers.filter(cu => Number(cu.classId) === numId).length;
+      const count = classUsers.filter(cu => String(cu.classId) === String(docId)).length;
       if (count > 0) warning = `Used by ${count} enrolled Students.`;
     }
 
@@ -1864,6 +1953,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
     setUserMiddleName("");
     setUserEmail("");
     setUserRole("Student");
+    setSectionId("");
     setSectionName("");
     setClassName("");
     setClassYearId("");
@@ -1883,10 +1973,11 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
   const handleEdit = (table: string, item: any) => {
     setEditingItem({ table, item });
     if (table === "academicYear") {
-      setAcademicYearId(item.id);
+      setAcademicYearId(item.id?.toString() || "");
       setAcademicYearDate(item.date);
     } else if (table === "semester") {
       setSemesterHalf(item.half);
+      setAcademicYearId(item.id?.toString() || ""); // reuse state if needed
     } else if (table === "user") {
       setUserLastName(item.lastName || "");
       setUserFirstName(item.firstName || "");
@@ -1909,6 +2000,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
   };
 
   const handleSave = async () => {
+    setIsSyncing(true);
     try {
       if (editingItem) {
         const { table, item } = editingItem;
@@ -1917,13 +2009,16 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
 
         if (table === "academicYear") {
           path = "academicYears";
-          data = { id: Number(item.id), date: academicYearDate };
+          const finalId = isNaN(Number(item.id)) ? item.id : Number(item.id);
+          data = { id: finalId, date: academicYearDate };
         } else if (table === "semester") {
           path = "semesters";
-          data = { id: Number(item.id), half: semesterHalf };
+          const finalId = isNaN(Number(item.id)) ? item.id : Number(item.id);
+          data = { id: finalId, half: semesterHalf };
         } else if (table === "user") {
           path = "institutionUsers";
-          data = { id: Number(item.id), lastName: userLastName, firstName: userFirstName, middleName: userMiddleName, email: userEmail, role: userRole };
+          const finalId = isNaN(Number(item.id)) ? item.id : Number(item.id);
+          data = { id: finalId, lastName: userLastName, firstName: userFirstName, middleName: userMiddleName, email: userEmail, role: userRole };
           
           if (item.uid) {
             try {
@@ -1932,7 +2027,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   email: userEmail,
-                  displayName: `${userFirstName} ${userLastName}`
+                  displayName: userRole === "Student" ? `${userLastName}, ${userFirstName}` : `${userFirstName} ${userLastName}`
                 })
               });
               addNotification?.("Auth Sync", "User updated in Firebase Authentication.", "success");
@@ -1942,19 +2037,19 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
           }
         } else if (table === "section") {
           path = "sections";
-          data = { id: Number(item.id), name: sectionName };
+          data = { id: item.id, name: sectionName };
         } else if (table === "class") {
           path = "classes";
           data = { 
-            id: Number(item.id),
-            academicYearId: Number(classYearId), 
-            semesterId: Number(classSemId), 
-            sectionId: Number(classSectionId), 
-            userId: Number(classTeacherId) 
+            id: item.id,
+            academicYearId: classYearId, 
+            semesterId: classSemId, 
+            sectionId: classSectionId, 
+            userId: classTeacherId 
           };
         } else if (table === "classUser") {
           path = "classUsers";
-          data = { classId: Number(classLinkId), userId: Number(classStudentId) };
+          data = { classId: classLinkId, userId: classStudentId };
         }
 
         if (path) {
@@ -2004,7 +2099,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
               body: JSON.stringify({
                 email: finalEmail,
                 password: defaultPassword,
-                displayName: `${userFirstName} ${userLastName}`,
+                displayName: userRole === "Student" ? `${userLastName}, ${userFirstName}` : `${userFirstName} ${userLastName}`,
                 role: userRole
               })
             });
@@ -2036,17 +2131,19 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
           docId = idNum.toString();
           data = { 
             id: idNum, 
-            academicYearId: Number(classYearId), 
-            semesterId: Number(classSemId), 
-            sectionId: Number(classSectionId), 
-            userId: Number(classTeacherId) 
+            academicYearId: classYearId, 
+            semesterId: classSemId, 
+            sectionId: classSectionId, 
+            userId: classTeacherId 
           };
         } else if (activeTab === "classUser") {
-          path = "classUsers";
-          data = { classId: Number(classLinkId), userId: Number(classStudentId) };
-          await addDoc(collection(db, path), data);
+          const path = "classUsers";
+          const data = { classId: classLinkId, userId: classStudentId };
+          const docId = `enroll_${classStudentId}_${classLinkId}`;
+          await setDoc(doc(db, path, docId), data);
           setIsEditModalOpen(false);
           resetForm();
+          addNotification?.("Success", "Student enrolled in class successfully.", "success");
           return;
         }
 
@@ -2057,6 +2154,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
     } catch (error) {
       handleFirestoreError(error, editingItem ? OperationType.UPDATE : OperationType.CREATE, null);
     }
+    setIsSyncing(false);
     setIsEditModalOpen(false);
     resetForm();
   };
@@ -2196,7 +2294,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
                 <tbody>
                   {academicYears.map(item => (
                     <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                      <td className="px-8 py-6 text-sm font-medium text-slate-600 border-r border-slate-100">{item.id}</td>
+                      <td className="px-8 py-6 text-xs font-mono font-medium text-indigo-600 border-r border-slate-100">{item.id}</td>
                       <td className="px-8 py-6 text-sm font-medium text-slate-600 border-r border-slate-100">{item.date}</td>
                       <td className="px-8 py-6 text-sm font-medium text-slate-600">
                         <div className="flex items-center gap-3">
@@ -2227,7 +2325,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
                 <tbody>
                   {semesters.map(item => (
                     <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                      <td className="px-8 py-6 text-sm font-medium text-slate-600 border-r border-slate-100">{item.id}</td>
+                      <td className="px-8 py-6 text-xs font-mono font-medium text-indigo-600 border-r border-slate-100">{item.id}</td>
                       <td className="px-8 py-6 text-sm font-medium text-slate-600 border-r border-slate-100">{item.half}</td>
                       <td className="px-8 py-6 text-sm font-medium text-slate-600">
                         <div className="flex items-center gap-3">
@@ -2263,7 +2361,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
                 <tbody>
                   {users.map(item => (
                     <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-100">{item.id}</td>
+                      <td className="px-6 py-4 text-xs font-mono font-medium text-indigo-600 border-r border-slate-100">{item.id}</td>
                       <td className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-100">{item.lastName}</td>
                       <td className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-100">{item.firstName}</td>
                       <td className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-100">{item.middleName}</td>
@@ -2319,7 +2417,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
                 <tbody>
                   {sections.map(item => (
                     <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                      <td className="px-8 py-6 text-sm font-medium text-slate-600 border-r border-slate-100">{item.id}</td>
+                      <td className="px-8 py-6 text-xs font-mono font-medium text-indigo-600 border-r border-slate-100">{item.id}</td>
                       <td className="px-8 py-6 text-sm font-medium text-slate-600 border-r border-slate-100">{item.name}</td>
                       <td className="px-8 py-6 text-sm font-medium text-slate-600">
                         <div className="flex items-center gap-3">
@@ -2352,14 +2450,14 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
                 </thead>
                 <tbody>
                   {classes.map(item => {
-                    const year = academicYears.find(y => Number(y.id) === Number(item.academicYearId));
-                    const sem = semesters.find(s => Number(s.id) === Number(item.semesterId));
-                    const section = sections.find(s => Number(s.id) === Number(item.sectionId));
-                    const teacher = users.find(u => Number(u.id) === Number(item.userId));
+                    const year = academicYears.find(y => String(y.id) === String(item.academicYearId));
+                    const sem = semesters.find(s => String(s.id) === String(item.semesterId));
+                    const section = sections.find(s => String(s.id) === String(item.sectionId));
+                    const teacher = users.find(u => String(u.id) === String(item.userId));
                     
                     return (
                       <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-100">{item.id}</td>
+                        <td className="px-6 py-4 text-xs font-mono font-medium text-indigo-600 border-r border-slate-100">{item.id}</td>
                         <td className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-100">{year?.date || item.academicYearId}</td>
                         <td className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-100">{sem?.half || item.semesterId}</td>
                         <td className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-100">{section?.name || item.sectionId}</td>
@@ -2386,6 +2484,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100">
+                    <th className="px-8 py-4 font-black text-slate-900 text-sm border-r border-slate-100">Enrollment ID</th>
                     <th className="px-8 py-4 font-black text-slate-900 text-sm border-r border-slate-100">Class</th>
                     <th className="px-8 py-4 font-black text-slate-900 text-sm border-r border-slate-100">Student</th>
                     <th className="px-8 py-4 font-black text-slate-900 text-sm">Actions</th>
@@ -2393,12 +2492,13 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
                 </thead>
                 <tbody>
                   {classUsers.map((item, i) => {
-                    const classItem = classes.find(c => Number(c.id) === Number(item.classId));
-                    const student = users.find(u => Number(u.id) === Number(item.userId));
-                    const section = classItem ? sections.find(s => Number(s.id) === Number(classItem.sectionId)) : null;
+                    const classItem = classes.find(c => String(c.id) === String(item.classId));
+                    const student = users.find(u => String(u.id) === String(item.userId));
+                    const section = classItem ? sections.find(s => String(s.id) === String(classItem.sectionId)) : null;
                     
                     return (
                       <tr key={`${item.classId}-${item.userId}-${i}`} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                        <td className="px-8 py-6 text-xs font-mono font-medium text-indigo-600 border-r border-slate-100">{item.id}</td>
                         <td className="px-8 py-6 text-sm font-medium text-slate-600 border-r border-slate-100">
                           {classItem ? `ID: ${classItem.id} | ${section?.name || 'Loading...'}` : item.classId}
                         </td>
@@ -2648,8 +2748,8 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
                       <select value={classLinkId} onChange={(e) => setClassLinkId(e.target.value)} className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium text-slate-900 shadow-sm">
                         <option value="">Select Class</option>
                         {classes.map(c => {
-                          const year = academicYears.find(y => Number(y.id) === Number(c.academicYearId));
-                          const section = sections.find(s => Number(s.id) === Number(c.sectionId));
+                          const year = academicYears.find(y => String(y.id) === String(c.academicYearId));
+                          const section = sections.find(s => String(s.id) === String(c.sectionId));
                           return (
                             <option key={c.id} value={c.id}>
                               ID: {c.id} | {year?.date} - {section?.name}
@@ -2663,7 +2763,7 @@ const MISView = ({ userProfile, activeTab, setActiveTab, addNotification }: { us
                       <select value={classStudentId} onChange={(e) => setClassStudentId(e.target.value)} className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium text-slate-900 shadow-sm">
                         <option value="">Select Student</option>
                         {users.filter(u => u.role === "Student").map(u => (
-                          <option key={u.id} value={u.id}>{u.firstName} {u.lastName} (ID: {u.id})</option>
+                          <option key={u.id} value={u.id}>{u.lastName}, {u.firstName} (ID: {u.id})</option>
                         ))}
                       </select>
                     </div>
@@ -3069,11 +3169,21 @@ const PerformanceView = ({ performance, initialHistory, mockScores, quizResults 
 const TeacherDashboard = ({ 
   onNavigate, 
   onSelectSection,
-  onSelectRisk
+  onSelectRisk,
+  allSections,
+  allClasses,
+  allStudents,
+  allClassUsers,
+  userProfile
 }: { 
   onNavigate?: (view: any) => void,
   onSelectSection?: (section: string) => void,
-  onSelectRisk?: (risk: "Low" | "Moderate" | "High" | "All") => void
+  onSelectRisk?: (risk: "Low" | "Moderate" | "High" | "All") => void,
+  allSections: any[],
+  allClasses: any[],
+  allStudents: any[],
+  allClassUsers: any[],
+  userProfile: any
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -3098,13 +3208,38 @@ const TeacherDashboard = ({
   };
 
   const { day, monthDay } = formatDate(currentTime);
-  const sections = ["BSIT - 1A", "BSIT - 1B", "BSIT - 1C"];
+  
+  // SYNCED: Filter sections that this teacher is assigned to based on classes
+  const teacherClasses = allClasses.filter(c => String(c.userId) === String(userProfile?.id));
+  const teacherSections = allSections.filter(s => teacherClasses.some(c => String(c.sectionId) === String(s.id)));
+  const teacherClassIds = teacherClasses.map(c => String(c.id));
+  
+  // Enrolled students for this teacher
+  const enrolledStudentIds = allClassUsers
+    .filter(cu => teacherClassIds.includes(String(cu.classId)))
+    .map(cu => String(cu.userId));
+  
+  const relevantStudents = allStudents.filter(s => enrolledStudentIds.includes(String(s.id)));
+
+  // If teacher has assigned sections, show them. Otherwise show all sections from the section list.
+  const sectionsToDisplay = teacherSections.length > 0 
+    ? teacherSections.map(s => s.name) 
+    : allSections.length > 0 
+      ? allSections.map(s => s.name)
+      : ["BSIT101", "BSIT102", "BSIT103"];
 
   const riskStats = {
-    Low: GLOBAL_ALERTS.filter(a => a.risk === "Low").length,
-    Moderate: GLOBAL_ALERTS.filter(a => a.risk === "Moderate").length,
-    High: GLOBAL_ALERTS.filter(a => a.risk === "High").length,
+    Low: relevantStudents.filter(s => (s.gpa || 3.0) <= 2.5).length,
+    Moderate: relevantStudents.filter(s => (s.gpa || 3.0) > 2.5 && (s.gpa || 3.0) <= 3.0).length,
+    High: relevantStudents.filter(s => (s.gpa || 3.0) > 3.0).length,
   };
+
+  // If no real students yet, fallback to some counts if needed, but better to show 0
+  const totalRelevant = relevantStudents.length;
+  if (totalRelevant === 0 && teacherSections.length > 0) {
+    // maybe some mock for empty state? but user wants consistency
+  }
+
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -3114,7 +3249,7 @@ const TeacherDashboard = ({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {sections.map((section) => (
+        {sectionsToDisplay.map((section) => (
           <motion.div 
             key={section} 
             whileHover={{ y: -2 }}
@@ -3224,20 +3359,31 @@ const TeacherDashboard = ({
 };
 
 const GLOBAL_ALERTS = [
-  { id: 1, student: "Alice Johnson", topic: "Recursion Logic", description: "Consistently failing recursion base case exercises.", risk: "High", section: "BSIT - 1A" },
-  { id: 2, student: "Bob Smith", topic: "Array Manipulation", description: "Struggling with multi-dimensional array shifts.", risk: "Moderate", section: "BSIT - 1B" },
-  { id: 3, student: "Charlie Brown", topic: "Basic Syntax", description: "Completed all foundation modules with high accuracy.", risk: "Low", section: "BSIT - 1A" },
-  { id: 4, student: "Diana Prince", topic: "Loops & Iterations", description: "Stuck on nested loop logic for 3 consecutive days.", risk: "High", section: "BSIT - 1C" },
-  { id: 5, student: "Ethan Hunt", topic: "Data Types", description: "Minor confusion between floats and doubles.", risk: "Moderate", section: "BSIT - 1B" },
-  { id: 6, student: "Fiona Gallagher", topic: "Function Scoping", description: "Frequent errors with global vs local variables.", risk: "High", section: "BSIT - 1A" },
+  { id: 1, student: "Johnson, Alice", topic: "Recursion Logic", description: "Consistently failing recursion base case exercises.", risk: "High", section: "BSIT - 1A" },
+  { id: 2, student: "Smith, Bob", topic: "Array Manipulation", description: "Struggling with multi-dimensional array shifts.", risk: "Moderate", section: "BSIT - 1B" },
+  { id: 3, student: "Brown, Charlie", topic: "Basic Syntax", description: "Completed all foundation modules with high accuracy.", risk: "Low", section: "BSIT - 1A" },
+  { id: 4, student: "Prince, Diana", topic: "Loops & Iterations", description: "Stuck on nested loop logic for 3 consecutive days.", risk: "High", section: "BSIT - 1C" },
+  { id: 5, student: "Hunt, Ethan", topic: "Data Types", description: "Minor confusion between floats and doubles.", risk: "Moderate", section: "BSIT - 1B" },
+  { id: 6, student: "Gallagher, Fiona", topic: "Function Scoping", description: "Frequent errors with global vs local variables.", risk: "High", section: "BSIT - 1A" },
+  { id: 7, student: "Paulino, Diane", topic: "Syntax & Semantics", description: "Shows good progress but needs reinforcement in lexical analysis.", risk: "Moderate", section: "BSIT - 1A" },
 ];
 
 const AlertsView = ({ 
   initialRisk = "All",
-  onBack = null
+  onBack = null,
+  allSections = [],
+  allStudents = [],
+  allClasses = [],
+  allClassUsers = [],
+  userProfile
 }: { 
   initialRisk?: "Low" | "Moderate" | "High" | "All",
-  onBack?: (() => void) | null
+  onBack?: (() => void) | null,
+  allSections?: any[],
+  allStudents?: any[],
+  allClasses?: any[],
+  allClassUsers?: any[],
+  userProfile?: any
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSection, setSelectedSection] = useState("All Sections");
@@ -3253,11 +3399,58 @@ const AlertsView = ({
   const [gradeScore, setGradeScore] = useState("50");
   const [maxScore] = useState("50");
   const [gradeRemarks, setGradeRemarks] = useState("");
-  const [feedbacks, setFeedbacks] = useState<Record<number, { subject: string; text: string }>>({});
+  const [feedbacks, setFeedbacks] = useState<Record<string, { subject: string; text: string }>>({});
   const [formSubject, setFormSubject] = useState("");
   const [formText, setFormText] = useState("");
 
-  const filteredAlerts = GLOBAL_ALERTS.filter(a => {
+  // Sync: Derive students that this teacher is responsible for
+  const teacherClasses = allClasses.filter(c => String(c.userId) === String(userProfile?.id));
+  const enrolledStudentIds = allClassUsers
+    .filter(cu => teacherClasses.some(c => String(c.id) === String(cu.classId)))
+    .map(cu => String(cu.userId));
+  
+  const relevantStudents = allStudents.filter(s => enrolledStudentIds.includes(String(s.id)));
+
+  // Mock some dynamic alerts from real students to keep consistency
+  const dynamicAlerts = relevantStudents.map(s => {
+    // Determine section name
+    let studentSection = "Unassigned";
+    const enrollment = allClassUsers.find(cu => String(cu.userId) === String(s.id));
+    if (enrollment) {
+      const cls = allClasses.find(c => String(c.id) === String(enrollment.classId));
+      if (cls) {
+        const sec = allSections.find(sc => String(sc.id) === String(cls.sectionId));
+        if (sec) studentSection = sec.name;
+      }
+    }
+
+    // Deterministic risk based on GPA for consistency
+    const gpa = s.gpa || 3.0;
+    let risk: "Low" | "Moderate" | "High" = "Low";
+    let topic = "General Progress";
+    let desc = "Consistently submitting work on time.";
+
+    if (gpa > 3.0) {
+      risk = "High";
+      topic = "Logic Application";
+      desc = "Struggling with advanced conditional flows.";
+    } else if (gpa > 2.5) {
+      risk = "Moderate";
+      topic = "Syntax Mastery";
+      desc = "Making progress but needs more syntax drill.";
+    }
+
+    return {
+      id: s.id,
+      student: `${s.lastName}, ${s.firstName}`,
+      topic,
+      description: desc,
+      risk,
+      section: studentSection
+    };
+  });
+
+  const filteredAlerts = dynamicAlerts.filter(a => {
     const matchesSearch = a.student.toLowerCase().includes(searchTerm.toLowerCase()) || 
                          a.topic.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesSection = selectedSection === "All Sections" || a.section === selectedSection;
@@ -3624,10 +3817,10 @@ const AlertsView = ({
             value={selectedSection}
             onChange={(e) => setSelectedSection(e.target.value)}
           >
-            <option>All Sections</option>
-            <option>BSIT - 1A</option>
-            <option>BSIT - 1B</option>
-            <option>BSIT - 1C</option>
+            <option value="All Sections">All Sections</option>
+            {allSections.map(s => (
+              <option key={s.id} value={s.name}>{s.name}</option>
+            ))}
           </select>
           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
         </div>
@@ -3675,6 +3868,12 @@ const AlertsView = ({
   );
 };
 
+interface LevelHistoryRecord {
+  term: string;
+  level: string;
+  updatedAt: string;
+}
+
 interface Student {
   id: string;
   name: string;
@@ -3682,6 +3881,7 @@ interface Student {
   section: string;
   level: "Beginner" | "Intermediate" | "Advanced";
   gpa: number;
+  levelHistory?: LevelHistoryRecord[];
 }
 
 const getStudentLevel = (gpa: number): "Beginner" | "Intermediate" | "Advanced" => {
@@ -3692,83 +3892,136 @@ const getStudentLevel = (gpa: number): "Beginner" | "Intermediate" | "Advanced" 
 
 const GLOBAL_STUDENTS: Student[] = [
   // BSIT - 1A
-  { id: "2024-001", name: "Alice Johnson", section: "BSIT - 1A", level: getStudentLevel(3.5), gpa: 3.5 },
-  { id: "2024-002", name: "Bob Smith", section: "BSIT - 1A", level: getStudentLevel(2.25), gpa: 2.25 },
-  { id: "2024-003", name: "Charlie Brown", section: "BSIT - 1A", level: getStudentLevel(1.5), gpa: 1.5 },
-  { id: "2024-004", name: "David Miller", section: "BSIT - 1A", level: getStudentLevel(3.25), gpa: 3.25 },
-  { id: "2024-005", name: "Eve Wilson", section: "BSIT - 1A", level: getStudentLevel(2.5), gpa: 2.5 },
-  { id: "2024-006", name: "Frank Thomas", section: "BSIT - 1A", level: getStudentLevel(1.25), gpa: 1.25 },
-  { id: "2024-007", name: "Grace Lee", section: "BSIT - 1A", level: getStudentLevel(3.1), gpa: 3.1 },
-  { id: "2024-008", name: "Henry Davis", section: "BSIT - 1A", level: getStudentLevel(2.0), gpa: 2.0 },
-  { id: "2024-009", name: "Ivy Garcia", section: "BSIT - 1A", level: getStudentLevel(1.75), gpa: 1.75 },
-  { id: "2024-010", name: "Jack White", section: "BSIT - 1A", level: getStudentLevel(3.0), gpa: 3.0 },
+  { id: "2024-001", name: "Johnson, Alice", section: "BSIT - 1A", level: getStudentLevel(3.5), gpa: 3.5 },
+  { id: "2024-002", name: "Smith, Bob", section: "BSIT - 1A", level: getStudentLevel(2.25), gpa: 2.25 },
+  { id: "2024-003", name: "Brown, Charlie", section: "BSIT - 1A", level: getStudentLevel(1.5), gpa: 1.5 },
+  { id: "2024-004", name: "Miller, David", section: "BSIT - 1A", level: getStudentLevel(3.25), gpa: 3.25 },
+  { id: "2024-005", name: "Wilson, Eve", section: "BSIT - 1A", level: getStudentLevel(2.5), gpa: 2.5 },
+  { id: "2024-006", name: "Thomas, Frank", section: "BSIT - 1A", level: getStudentLevel(1.25), gpa: 1.25 },
+  { id: "2024-007", name: "Lee, Grace", section: "BSIT - 1A", level: getStudentLevel(3.1), gpa: 3.1 },
+  { id: "2024-008", name: "Davis, Henry", section: "BSIT - 1A", level: getStudentLevel(2.0), gpa: 2.0 },
+  { id: "2024-009", name: "Garcia, Ivy", section: "BSIT - 1A", level: getStudentLevel(1.75), gpa: 1.75 },
+  { id: "2024-010", name: "White, Jack", section: "BSIT - 1A", level: getStudentLevel(3.0), gpa: 3.0 },
   
   // BSIT - 1B
-  { id: "2024-011", name: "Kelly Green", section: "BSIT - 1B", level: getStudentLevel(2.1), gpa: 2.1 },
-  { id: "2024-012", name: "Liam Neeson", section: "BSIT - 1B", level: getStudentLevel(1.0), gpa: 1.0 },
-  { id: "2024-013", name: "Mia Wong", section: "BSIT - 1B", level: getStudentLevel(3.2), gpa: 3.2 },
-  { id: "2024-014", name: "Noah Ark", section: "BSIT - 1B", level: getStudentLevel(2.75), gpa: 2.75 },
-  { id: "2024-015", name: "Olivia Pope", section: "BSIT - 1B", level: getStudentLevel(1.1), gpa: 1.1 },
-  { id: "2024-016", name: "Peter Parker", section: "BSIT - 1B", level: getStudentLevel(3.4), gpa: 3.4 },
-  { id: "2024-017", name: "Quinn Fabray", section: "BSIT - 1B", level: getStudentLevel(2.4), gpa: 2.4 },
-  { id: "2024-018", name: "Riley Reid", section: "BSIT - 1B", level: getStudentLevel(1.6), gpa: 1.6 },
-  { id: "2024-019", name: "Sam Winchester", section: "BSIT - 1B", level: getStudentLevel(3.1), gpa: 3.1 },
-  { id: "2024-020", name: "Tina Fey", section: "BSIT - 1B", level: getStudentLevel(2.3), gpa: 2.3 },
-
+  { id: "2024-011", name: "Green, Kelly", section: "BSIT - 1B", level: getStudentLevel(2.1), gpa: 2.1 },
+  { id: "2024-012", name: "Neeson, Liam", section: "BSIT - 1B", level: getStudentLevel(1.0), gpa: 1.0 },
+  { id: "2024-013", name: "Wong, Mia", section: "BSIT - 1B", level: getStudentLevel(3.2), gpa: 3.2 },
+  { id: "2024-014", name: "Ark, Noah", section: "BSIT - 1B", level: getStudentLevel(2.75), gpa: 2.75 },
+  { id: "2024-015", name: "Pope, Olivia", section: "BSIT - 1B", level: getStudentLevel(1.1), gpa: 1.1 },
+  { id: "2024-016", name: "Parker, Peter", section: "BSIT - 1B", level: getStudentLevel(3.4), gpa: 3.4 },
+  { id: "2024-017", name: "Fabray, Quinn", section: "BSIT - 1B", level: getStudentLevel(2.4), gpa: 2.4 },
+  { id: "2024-018", name: "Reid, Riley", section: "BSIT - 1B", level: getStudentLevel(1.6), gpa: 1.6 },
+  { id: "2024-019", name: "Winchester, Sam", section: "BSIT - 1B", level: getStudentLevel(3.1), gpa: 3.1 },
+  { id: "2024-020", name: "Fey, Tina", section: "BSIT - 1B", level: getStudentLevel(2.3), gpa: 2.3 },
+  
   // BSIT - 1C
-  { id: "2024-021", name: "Uma Thurman", section: "BSIT - 1C", level: getStudentLevel(1.4), gpa: 1.4 },
-  { id: "2024-022", name: "Victor Hugo", section: "BSIT - 1C", level: getStudentLevel(3.0), gpa: 3.0 },
-  { id: "2024-023", name: "Wendy Darling", section: "BSIT - 1C", level: getStudentLevel(2.2), gpa: 2.2 },
-  { id: "2024-024", name: "Xander Cage", section: "BSIT - 1C", level: getStudentLevel(1.7), gpa: 1.7 },
-  { id: "2024-025", name: "Yara Greyjoy", section: "BSIT - 1C", level: getStudentLevel(3.2), gpa: 3.2 },
-  { id: "2024-026", name: "Zane Grey", section: "BSIT - 1C", level: getStudentLevel(2.6), gpa: 2.6 },
-  { id: "2024-027", name: "Arthur Dent", section: "BSIT - 1C", level: getStudentLevel(1.2), gpa: 1.2 },
-  { id: "2024-028", name: "Bilbo Baggins", section: "BSIT - 1C", level: getStudentLevel(3.1), gpa: 3.1 },
-  { id: "2024-029", name: "Catelyn Stark", section: "BSIT - 1C", level: getStudentLevel(2.5), gpa: 2.5 },
-  { id: "2024-030", name: "Dobby Elf", section: "BSIT - 1C", level: getStudentLevel(1.3), gpa: 1.3 },
+  { id: "2024-021", name: "Thurman, Uma", section: "BSIT - 1C", level: getStudentLevel(1.4), gpa: 1.4 },
+  { id: "2024-022", name: "Hugo, Victor", section: "BSIT - 1C", level: getStudentLevel(3.0), gpa: 3.0 },
+  { id: "2024-023", name: "Darling, Wendy", section: "BSIT - 1C", level: getStudentLevel(2.2), gpa: 2.2 },
+  { id: "2024-024", name: "Cage, Xander", section: "BSIT - 1C", level: getStudentLevel(1.7), gpa: 1.7 },
+  { id: "2024-025", name: "Greyjoy, Yara", section: "BSIT - 1C", level: getStudentLevel(3.2), gpa: 3.2 },
+  { id: "2024-026", name: "Grey, Zane", section: "BSIT - 1C", level: getStudentLevel(2.6), gpa: 2.6 },
+  { id: "2024-027", name: "Dent, Arthur", section: "BSIT - 1C", level: getStudentLevel(1.2), gpa: 1.2 },
+  { id: "2024-028", name: "Baggins, Bilbo", section: "BSIT - 1C", level: getStudentLevel(3.1), gpa: 3.1 },
+  { id: "2024-029", name: "Stark, Catelyn", section: "BSIT - 1C", level: getStudentLevel(2.5), gpa: 2.5 },
+  { id: "2024-030", name: "Elf, Dobby", section: "BSIT - 1C", level: getStudentLevel(1.3), gpa: 1.3 },
+  { id: "2024-134", name: "Paulino, Diane", section: "BSIT - 1A", level: getStudentLevel(2.8), gpa: 2.8 },
 ];
 
 const StudentListView = ({ 
   initialSection = null,
   onBack = null,
-  onSendPlan = null
+  onSendPlan = null,
+  allSections,
+  allStudents,
+  allClasses,
+  allClassUsers,
 }: { 
   initialSection?: string | null,
   onBack?: (() => void) | null,
-  onSendPlan?: ((student: Student) => void) | null
+  onSendPlan?: ((student: Student) => void) | null,
+  allSections: any[],
+  allStudents: any[],
+  allClasses: any[],
+  allClassUsers: any[],
 }) => {
   const [selectedSection, setSelectedSection] = useState<string | null>(initialSection);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterLevel, setFilterLevel] = useState<string>("All");
   const [sortBy, setSortBy] = useState<"name" | "level" | "gpa">("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const [selectedStudentDetails, setSelectedStudentDetails] = useState<Student | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
-  const sections = ["BSIT - 1A", "BSIT - 1B", "BSIT - 1C"];
+  // Sync sections from MIS
+  const sections = allSections.map(s => s.name);
   
   useEffect(() => {
     setSelectedSection(initialSection);
   }, [initialSection]);
   
-  const filteredStudents = GLOBAL_STUDENTS
-    .filter(s => !selectedSection || s.section === selectedSection)
-    .filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.id.includes(searchTerm))
-    .filter(s => filterLevel === "All" || s.level === filterLevel)
+  const filteredStudents = allStudents
+    .filter(s => {
+      if (!selectedSection) return true;
+      // Resolve student's section through classUsers and classes
+      const sectionObj = allSections.find(sec => sec.name === selectedSection);
+      if (!sectionObj) return false;
+      
+      const sessionClasses = allClasses.filter(c => String(c.sectionId) === String(sectionObj.id));
+      const isEnrolled = allClassUsers.some(cu => 
+        String(cu.userId) === String(s.id) && 
+        sessionClasses.some(c => String(c.id) === String(cu.classId))
+      );
+      return isEnrolled;
+    })
+    .filter(s => {
+      const fullName = `${s.firstName} ${s.lastName}`.toLowerCase();
+      return fullName.includes(searchTerm.toLowerCase());
+    })
+    .map(s => {
+      let studentSection = "Unassigned";
+      if (selectedSection) {
+        studentSection = selectedSection;
+      } else {
+        // Resolve student's section through classUsers and classes
+        const enrollment = allClassUsers.find(cu => String(cu.userId) === String(s.id));
+        if (enrollment) {
+          const cls = allClasses.find(c => String(c.id) === String(enrollment.classId));
+          if (cls) {
+            const sec = allSections.find(sc => String(sc.id) === String(cls.sectionId));
+            if (sec) studentSection = sec.name;
+          }
+        }
+      }
+
+      return {
+        ...s,
+        name: `${s.lastName}, ${s.firstName} ${s.middleName || ""}`,
+        level: s.level || "Beginner",
+        gpa: s.gpa || 0,
+        section: studentSection
+      };
+    })
     .sort((a, b) => {
+      // Primary sort by section if no specific section is selected
+      if (!selectedSection) {
+        const secCompare = a.section.localeCompare(b.section, undefined, { numeric: true });
+        if (secCompare !== 0) return secCompare;
+      }
+
       let comparison = 0;
       if (sortBy === "name") {
-        const aLast = a.name.split(" ").slice(-1)[0];
-        const bLast = b.name.split(" ").slice(-1)[0];
-        comparison = aLast.localeCompare(bLast);
-        if (comparison === 0) comparison = a.name.localeCompare(b.name);
+        comparison = a.name.localeCompare(b.name);
       }
       if (sortBy === "gpa") comparison = a.gpa - b.gpa;
       if (sortBy === "level") {
         const levels = { "Beginner": 1, "Intermediate": 2, "Advanced": 3 };
-        comparison = levels[a.level] - levels[b.level];
+        comparison = levels[a.level as keyof typeof levels] - levels[b.level as keyof typeof levels];
       }
       return sortOrder === "asc" ? comparison : -comparison;
     });
+
+  const selectedStudent = filteredStudents.find(s => String(s.id) === String(selectedStudentId));
 
   const handleSort = (key: "name" | "level" | "gpa") => {
     if (sortBy === key) {
@@ -3776,6 +4029,32 @@ const StudentListView = ({
     } else {
       setSortBy(key);
       setSortOrder("asc");
+    }
+  };
+
+  const updateStudentLevel = async (studentId: string, term: string, newLevel: string) => {
+    try {
+      const studentDoc = allStudents.find(s => String(s.id) === String(studentId));
+      if (!studentDoc) return;
+
+      const currentHistory = studentDoc.levelHistory || [];
+      const now = new Date().toLocaleDateString();
+      
+      const newHistory = [...currentHistory];
+      const index = newHistory.findIndex((h) => h.term === term);
+      
+      if (index > -1) {
+        newHistory[index] = { ...newHistory[index], level: newLevel, updatedAt: now };
+      } else {
+        newHistory.push({ term, level: newLevel, updatedAt: now });
+      }
+
+      await updateDoc(doc(db, "institutionUsers", String(studentId)), {
+        levelHistory: newHistory,
+        level: newLevel 
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `institutionUsers/${studentId}`);
     }
   };
 
@@ -3810,7 +4089,15 @@ const StudentListView = ({
         {!selectedSection ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {sections.map((section) => {
-              const count = GLOBAL_STUDENTS.filter(s => s.section === section).length;
+              const count = allStudents.filter(s => {
+                const sectionObj = allSections.find(sec => sec.name === section);
+                if (!sectionObj) return false;
+                const sessionClasses = allClasses.filter(c => String(c.sectionId) === String(sectionObj.id));
+                return allClassUsers.some(cu => 
+                  String(cu.userId) === String(s.id) && 
+                  sessionClasses.some(c => String(c.id) === String(cu.classId))
+                );
+              }).length;
               return (
                 <motion.button
                   key={section}
@@ -3842,7 +4129,7 @@ const StudentListView = ({
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input 
                   type="text" 
-                  placeholder="Search by name or ID..." 
+                  placeholder="Search by name..." 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
@@ -3898,7 +4185,6 @@ const StudentListView = ({
                   <thead>
                     <tr className="text-left border-b border-slate-100">
                       <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest pl-4">Student</th>
-                      <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Student ID</th>
                       <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Level</th>
                       <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">GPA</th>
                       <th className="pb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right pr-4">Actions</th>
@@ -3926,7 +4212,6 @@ const StudentListView = ({
                               </div>
                             </div>
                           </td>
-                          <td className="py-4 md:py-5 text-xs md:text-sm text-slate-500 font-medium">{student.id}</td>
                           <td className="py-4 md:py-5">
                             <span className={cn(
                               "px-2 md:px-3 py-1 rounded-full text-[9px] md:text-[10px] font-black uppercase whitespace-nowrap",
@@ -3943,7 +4228,7 @@ const StudentListView = ({
                           <td className="py-4 md:py-5 text-right pr-4">
                             <div className="flex items-center justify-end gap-2">
                               <button 
-                                onClick={() => setSelectedStudentDetails(student)}
+                                onClick={() => setSelectedStudentId(student.id)}
                                 className="p-1.5 md:p-2 text-slate-400 hover:text-indigo-600 transition-colors bg-slate-50 rounded-lg"
                               >
                                 <Eye size={16} />
@@ -3970,13 +4255,13 @@ const StudentListView = ({
       </div>
 
       <AnimatePresence>
-        {selectedStudentDetails && (
+        {selectedStudent && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setSelectedStudentDetails(null)}
+              onClick={() => setSelectedStudentId(null)}
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
@@ -3992,12 +4277,11 @@ const StudentListView = ({
                       <User size={28} />
                     </div>
                     <div>
-                      <h3 className="text-xl font-black text-slate-900 leading-tight">{selectedStudentDetails.name}</h3>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">ID: {selectedStudentDetails.id}</p>
+                      <h3 className="text-xl font-black text-slate-900 leading-tight">{selectedStudent.name}</h3>
                     </div>
                   </div>
                   <button 
-                    onClick={() => setSelectedStudentDetails(null)}
+                    onClick={() => setSelectedStudentId(null)}
                     className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-all"
                   >
                     <X size={20} />
@@ -4006,40 +4290,30 @@ const StudentListView = ({
 
                 <div className="flex items-center justify-between pb-6 border-b border-slate-50">
                   <span className="text-sm font-black text-slate-400 uppercase tracking-widest">Current GPA</span>
-                  <span className="text-2xl font-black text-indigo-600">{selectedStudentDetails.gpa.toFixed(2)}</span>
-                </div>
-
-                <div className="space-y-4">
-                  <button 
-                    onClick={() => {
-                      onSendPlan?.(selectedStudentDetails);
-                      setSelectedStudentDetails(null);
-                    }}
-                    className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
-                  >
-                    <Sparkles size={16} />
-                    Send Study Plan
-                  </button>
+                  <span className="text-2xl font-black text-indigo-600">{selectedStudent.gpa.toFixed(2)}</span>
                 </div>
 
                 <div className="space-y-6">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Level History</h4>
                   <div className="space-y-4">
-                    {[
-                      { term: "Prelims", date: "03-15-2024", level: "Beginner" },
-                      { term: "Midterms", date: "05-10-2024", level: "Beginner" },
-                      { term: "Finals", date: "07-20-2024", level: "Intermediate" },
-                    ].map((h, i) => (
-                      <div key={i} className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-bold text-slate-900">{h.term}</p>
-                          <p className="text-[10px] font-bold text-slate-400 mt-0.5">{h.date}</p>
+                    {["Prelims", "Midterms", "Pre-Finals", "Finals"].map((term) => {
+                      const record = selectedStudent.levelHistory?.find((h) => h.term === term);
+                      return (
+                        <div key={term} className="flex items-center justify-between gap-4">
+                          <p className="text-sm font-bold text-slate-900">{term}</p>
+                          <select 
+                            value={record?.level || ""}
+                            onChange={(e) => updateStudentLevel(selectedStudent.id, term, e.target.value)}
+                            className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl font-bold text-[10px] text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 transition-all uppercase tracking-wider"
+                          >
+                            <option value="">Select Level</option>
+                            <option value="Beginner">Beginner</option>
+                            <option value="Intermediate">Intermediate</option>
+                            <option value="Advanced">Advanced</option>
+                          </select>
                         </div>
-                        <div className="px-4 py-1.5 bg-slate-50 border border-slate-100 rounded-xl font-bold text-[10px] text-slate-600 uppercase tracking-wider">
-                          {h.level}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -4057,14 +4331,24 @@ const StudyPlansView = ({
   syllabus,
   calendarFile,
   uploadedFiles,
-  semesterDates
+  semesterDates,
+  allStudents = [],
+  allSections = [],
+  allClasses = [],
+  allClassUsers = [],
+  userProfile
 }: { 
   recipient?: Student | null,
   onClearRecipient?: () => void,
   syllabus: any,
   calendarFile: any,
   uploadedFiles: any[],
-  semesterDates: any
+  semesterDates: any,
+  allStudents?: any[],
+  allSections?: any[],
+  allClasses?: any[],
+  allClassUsers?: any[],
+  userProfile?: any
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [approvalSectionFilter, setApprovalSectionFilter] = useState("All");
@@ -4075,6 +4359,47 @@ const StudyPlansView = ({
   const [generatedPlan, setGeneratedPlan] = useState<string | null>(null);
   const [aiPrompt, setAiPrompt] = useState("");
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [preTestPrompt, setPreTestPrompt] = useState("");
+  const [generatedPreTest, setGeneratedPreTest] = useState<string | null>(null);
+  const [isGeneratingPreTest, setIsGeneratingPreTest] = useState(false);
+
+  // Derive relevant students for the teacher
+  const teacherClasses = allClasses.filter(c => String(c.userId) === String(userProfile?.id));
+  const enrolledStudentIds = allClassUsers
+    .filter(cu => teacherClasses.some(c => String(c.id) === String(cu.classId)))
+    .map(cu => String(cu.userId));
+  
+  const relevantStudents = allStudents.filter(s => enrolledStudentIds.includes(String(s.id)));
+
+  // Synchronize some mock requests from real relevant students
+  const [requests, setRequests] = useState<{
+    id: string;
+    studentName: string;
+    section: string;
+    date: string;
+    status: "Approved" | "Rejected" | "Pending";
+    content: string;
+  }[]>(relevantStudents.slice(0, 8).map(s => {
+    // Resolve section
+    let studentSection = "Unassigned";
+    const enrollment = allClassUsers.find(cu => String(cu.userId) === String(s.id));
+    if (enrollment) {
+      const cls = allClasses.find(c => String(c.id) === String(enrollment.classId));
+      if (cls) {
+        const sec = allSections.find(sc => String(sc.id) === String(cls.sectionId));
+        if (sec) studentSection = sec.name;
+      }
+    }
+
+    return {
+      id: s.id,
+      studentName: `${s.lastName}, ${s.firstName}`,
+      section: studentSection,
+      date: format(new Date(), "MMM dd, yyyy"),
+      status: "Pending",
+      content: `Requesting a personalized study path for the upcoming ${s.level || "Beginner"} level modules.`
+    };
+  }));
 
   const handleLevelGenerate = async () => {
     if (!syllabus || !calendarFile) {
@@ -4084,9 +4409,6 @@ const StudyPlansView = ({
     setIsAiThinking(true);
     setGeneratedPlan(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = "gemini-1.5-flash"; // Use confirmed model alias
-
       const resourceContext = uploadedFiles.length > 0 
         ? `\nAVAILABLE RESOURCES (from your Resources page): \n${uploadedFiles.map(f => `- ${f.name} (Category: ${f.category}, Type: ${f.type})`).join("\n")}`
         : "";
@@ -4115,14 +4437,22 @@ const StudyPlansView = ({
         5. Professional Markdown with specific dates.
       `;
 
-      const result = await ai.models.generateContent({
-        model: model,
-        contents: prompt,
+      const response = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, model: "gemini-3-flash-preview" })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "AI generation failed");
+      }
+
+      const result = await response.json();
       setGeneratedPlan(result.text || "### Error Generating Plan\n\nPlease check your files and try again.");
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setGeneratedPlan("### Error Generating Plan\n\nPlease check your files and try again.");
+      setGeneratedPlan("### Error Generating Plan\n\n" + (err.message || "Please check your files and try again."));
     } finally {
       setIsAiThinking(false);
     }
@@ -4137,9 +4467,6 @@ const StudyPlansView = ({
     setIsAiThinking(true);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = "gemini-3-flash-preview";
-      
       const prompt = `
         You are an AI Curriculum Specialist. Use the existing study plan and the user's request to refine it.
         
@@ -4157,35 +4484,96 @@ const StudyPlansView = ({
         OUTPUT: Updated Markdown study plan.
       `;
       
-      const result = await ai.models.generateContent({
-        model: model,
-        contents: prompt,
+      const response = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, model: "gemini-3-flash-preview" })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "AI refinement failed");
+      }
+
+      const result = await response.json();
       setGeneratedPlan(result.text || "Updated Markdown study plan.");
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setGeneratedPlan("### Error refining plan\n\n" + (err.message || "Please try again."));
     } finally {
       setIsAiThinking(false);
     }
   };
 
-  const [requests, setRequests] = useState<{
-    id: number;
-    studentName: string;
-    section: string;
-    date: string;
-    status: "Approved" | "Rejected" | "Pending";
-    content: string;
-  }[]>([
-    { id: 1, studentName: "Alice Johnson", section: "BSIT - 1A", date: "May 12, 2024", status: "Pending", content: "Focus on understanding Linked Lists and Binary Trees through visualization tools and practical coding exercises. I plan to dedicate 2 hours daily for practice." },
-    { id: 2, studentName: "Bob Smith", section: "BSIT - 1B", date: "May 11, 2024", status: "Pending", content: "Reviewing fundamental Python syntax and moving towards API integration modules over the next 4 weeks using real-world project scenarios." },
-    { id: 3, studentName: "Charlie Brown", section: "BSIT - 1A", date: "May 10, 2024", status: "Pending", content: "Advanced algorithms study including Dynamic Programming and Graph theory. Aiming to complete 5 competitive programming challenges per week." },
-    { id: 4, studentName: "Diana Prince", section: "BSIT - 1C", date: "May 12, 2024", status: "Pending", content: "Comprehensive base of SQL queries and relational database design. I will build a small inventory management system as final project." },
-    { id: 5, studentName: "Ethan Hunt", section: "BSIT - 1B", date: "May 09, 2024", status: "Pending", content: "Introduction to Web Development basics, focusing on semantic HTML and responsive CSS layouts using Flexbox and Grid." },
-    { id: 6, studentName: "Fiona Gallagher", section: "BSIT - 1A", date: "May 08, 2024", status: "Pending", content: "Java object-oriented programming principles, inheritance, and polymorphism with weekly coding peer reviews." },
-    { id: 7, studentName: "George RR Martin", section: "BSIT - 1C", date: "May 07, 2024", status: "Pending", content: "Mobile app development with React Native, focusing on cross-platform navigation and state management patterns." },
-    { id: 8, studentName: "Hideo Kojima", section: "BSIT - 1B", date: "May 06, 2024", status: "Pending", content: "Cybersecurity fundamentals, network scanning, and penetration testing ethically within a sandbox environment." },
-  ]);
+  const handleGeneratePreTest = async () => {
+    if (!preTestPrompt.trim()) return;
+    setIsGeneratingPreTest(true);
+    setGeneratedPreTest(null);
+    try {
+      const resourceContext = uploadedFiles.length > 0 
+        ? `\nAVAILABLE RESOURCES (Handouts/Modules): \n${uploadedFiles.filter(f => f.category === "Modules" || f.category === "Course Outline").map(f => `- ${f.name}: ${f.content}`).join("\n")}`
+        : "";
+
+      const prompt = `
+        You are an AI Academic Evaluator. Your task is to generate a comprehensive pre-test based on the teacher's instructions and the available resources.
+        
+        ${resourceContext}
+        
+        TEACHER'S PROMPT:
+        ${preTestPrompt}
+        
+        INSTRUCTIONS:
+        - Refer to the handouts/modules provided above to ensure questions are relevant to the actual course content.
+        - Create a mix of multiple-choice, true/false, and short answer questions.
+        - Provide an answer key at the very end.
+        - Format the output in clear, professional Markdown.
+      `;
+
+      const response = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, model: "gemini-3-flash-preview" })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "AI pre-test generation failed");
+      }
+
+      const result = await response.json();
+      setGeneratedPreTest(result.text || "### Error Generating Pre-test\n\nPlease try again.");
+    } catch (err: any) {
+      console.error(err);
+      setGeneratedPreTest("### Error Generating Pre-test\n\n" + (err.message || "Please try again."));
+    } finally {
+      setIsGeneratingPreTest(false);
+    }
+  };
+
+  // Re-sync requests if relevant students change
+  useEffect(() => {
+    if (relevantStudents.length > 0 && requests.length === 0) {
+      setRequests(relevantStudents.slice(0, 8).map(s => {
+        let studentSection = "Unassigned";
+        const enrollment = allClassUsers.find(cu => String(cu.userId) === String(s.id));
+        if (enrollment) {
+          const cls = allClasses.find(c => String(c.id) === String(enrollment.classId));
+          if (cls) {
+            const sec = allSections.find(sc => String(sc.id) === String(cls.sectionId));
+            if (sec) studentSection = sec.name;
+          }
+        }
+        return {
+          id: s.id,
+          studentName: `${s.lastName}, ${s.firstName}`,
+          section: studentSection,
+          date: format(new Date(), "MMM dd, yyyy"),
+          status: "Pending",
+          content: `Requesting a personalized study path for the upcoming ${s.level || "Beginner"} level modules.`
+        };
+      }));
+    }
+  }, [relevantStudents]);
 
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
   const [modalRemarks, setModalRemarks] = useState("");
@@ -4417,6 +4805,89 @@ const StudyPlansView = ({
         </div>
       </div>
 
+      {/* Container 3: Pre-test Generator */}
+      <div className="bg-white rounded-[40px] p-6 md:p-12 border border-slate-100 shadow-sm space-y-10">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center">
+            <ClipboardList size={24} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Pre-test Generator</h2>
+            <p className="text-sm font-medium text-slate-500">Generate assessments based on your uploaded modules</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="relative">
+            <textarea 
+              placeholder="Tell the AI what kind of pre-test you need (e.g., 'Make a 10-question multiple choice pre-test about Module 1 and 2')"
+              value={preTestPrompt}
+              onChange={(e) => setPreTestPrompt(e.target.value)}
+              className="w-full h-64 p-8 bg-slate-50/50 border-2 border-slate-100 rounded-[32px] text-sm font-bold text-slate-900 placeholder:text-slate-300 focus:outline-none focus:border-indigo-100 transition-all resize-none shadow-inner"
+            />
+            <button 
+              onClick={handleGeneratePreTest}
+              disabled={!preTestPrompt.trim() || isGeneratingPreTest}
+              className="absolute bottom-6 right-6 px-10 py-5 bg-slate-900 text-white rounded-[24px] font-black text-[10px] uppercase tracking-widest hover:bg-indigo-600 transition-all flex items-center gap-3 shadow-xl disabled:opacity-50"
+            >
+              {isGeneratingPreTest ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={14} className="text-amber-400" />
+                  Generate Assessment
+                </>
+              )}
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {generatedPreTest && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.98, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                className="p-10 bg-white border-2 border-slate-100 rounded-[40px] shadow-sm relative group overflow-hidden"
+              >
+                <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-400" />
+                <div className="flex items-center justify-between mb-8">
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Generated Assessment</h3>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedPreTest);
+                        alert("Pre-test copied to clipboard!");
+                      }}
+                      className="p-3 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                      title="Copy to clipboard"
+                    >
+                      <Copy size={20} />
+                    </button>
+                    <button 
+                      onClick={() => setGeneratedPreTest(null)}
+                      className="p-3 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+                <div className="prose prose-slate max-w-none prose-sm">
+                  <div className="space-y-4 max-h-[600px] overflow-y-auto pr-4 custom-scrollbar">
+                    {generatedPreTest.split('\n').map((line, i) => {
+                      if (line.startsWith('#')) return <h3 key={i} className="text-lg font-black text-slate-900 mt-6">{line.replace(/#/g, '')}</h3>;
+                      return <p key={i} className="text-slate-600 font-medium leading-relaxed">{line}</p>;
+                    })}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
       {/* Approval Modal */}
       <AnimatePresence>
         {selectedRequest && (
@@ -4632,9 +5103,27 @@ const StudyPlansView = ({
   );
 };
 
-const ClassRecordsView = () => {
-  const [selectedSection, setSelectedSection] = useState("BSIT - 1A");
-  const sections = ["BSIT - 1A", "BSIT - 1B", "BSIT - 1C"];
+const ClassRecordsView = ({
+  allStudents = [],
+  allSections = [],
+  allClasses = [],
+  allClassUsers = [],
+  userProfile
+}: {
+  allStudents?: any[],
+  allSections?: any[],
+  allClasses?: any[],
+  allClassUsers?: any[],
+  userProfile?: any
+}) => {
+  // Derive relevant students and sections for the teacher
+  const teacherClasses = allClasses.filter(c => String(c.userId) === String(userProfile?.id));
+  const assignedSectionIds = Array.from(new Set(teacherClasses.map(c => String(c.sectionId))));
+  const assignedSections = allSections.filter(s => assignedSectionIds.includes(String(s.id)));
+  
+  const sections = assignedSections.length > 0 ? assignedSections.map(s => s.name) : ["BSIT - 1A", "BSIT - 1B", "BSIT - 1C"];
+  const [selectedSection, setSelectedSection] = useState(sections[0] || "BSIT - 1A");
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUploadClick = () => {
@@ -4648,14 +5137,22 @@ const ClassRecordsView = () => {
     }
   };
 
-  const filteredStudents = GLOBAL_STUDENTS
-    .filter(s => s.section === selectedSection)
-    .sort((a, b) => {
-      const aLast = a.name.split(" ").slice(-1)[0];
-      const bLast = b.name.split(" ").slice(-1)[0];
-      if (aLast !== bLast) return aLast.localeCompare(bLast);
-      return a.name.localeCompare(b.name);
-    });
+  const filteredStudents = allStudents
+    .filter(s => {
+      // Resolve section
+      const sectionObj = allSections.find(sec => sec.name === selectedSection);
+      if (!sectionObj) return false;
+      const sessionClasses = allClasses.filter(c => String(c.sectionId) === String(sectionObj.id));
+      return allClassUsers.some(cu => 
+        String(cu.userId) === String(s.id) && 
+        sessionClasses.some(c => String(c.id) === String(cu.classId))
+      );
+    })
+    .sort((a, b) => a.lastName.localeCompare(b.lastName))
+    .map(s => ({
+      ...s,
+      name: `${s.lastName}, ${s.firstName}`
+    }));
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -4740,75 +5237,108 @@ const ClassRecordsView = () => {
   );
 };
 
-const TeacherFeedbackView = () => (
-  <div className="bg-white rounded-[40px] p-12 border border-slate-100 shadow-sm">
-    <div className="flex items-center justify-between mb-8">
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
-          <MessageSquare size={24} />
-        </div>
-        <div>
-          <h1 className="text-2xl font-black text-slate-900">Provide Student Feedback</h1>
-          <p className="text-slate-500 text-sm">Send academic guidance and feedback to your students</p>
-        </div>
-      </div>
-      <button className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
-        New Feedback
-      </button>
-    </div>
+const TeacherFeedbackView = ({
+  allStudents = [],
+  allSections = [],
+  allClasses = [],
+  allClassUsers = [],
+  userProfile
+}: {
+  allStudents?: any[],
+  allSections?: any[],
+  allClasses?: any[],
+  allClassUsers?: any[],
+  userProfile?: any
+}) => {
+  // Derive relevant students
+  const teacherClasses = allClasses.filter(c => String(c.userId) === String(userProfile?.id));
+  const enrolledStudentIds = allClassUsers
+    .filter(cu => teacherClasses.some(c => String(c.id) === String(cu.classId)))
+    .map(cu => String(cu.userId));
+  
+  const relevantStudents = allStudents.filter(s => enrolledStudentIds.includes(String(s.id)));
 
-    <div className="grid grid-cols-1 gap-6">
-      {[
-        { name: "John Doe", course: "Data Structures", lastActive: "2h ago", status: "Needs Guidance" },
-        { name: "Jane Smith", course: "Algorithms", lastActive: "5h ago", status: "Excellent Progress" },
-        { name: "Mike Ross", course: "Database Systems", lastActive: "1d ago", status: "Pending Review" }
-      ].map((student, i) => (
-        <div key={i} className="p-8 bg-slate-50 rounded-[32px] border border-slate-100 hover:border-indigo-200 transition-all group">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm font-black text-lg">
-                {student.name.split(' ').map(n => n[0]).join('')}
-              </div>
-              <div>
-                <h3 className="font-black text-slate-900 text-lg">{student.name}</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{student.course}</span>
-                  <span className="w-1 h-1 rounded-full bg-slate-300" />
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active {student.lastActive}</span>
+  const syncFeedbackStudents = relevantStudents.slice(0, 3).map((s, i) => {
+    const statuses = ["Needs Guidance", "Excellent Progress", "Pending Review"];
+    return {
+      name: `${s.lastName}, ${s.firstName}`,
+      course: "Programming",
+      lastActive: `${i + 1}h ago`,
+      status: statuses[i % statuses.length]
+    };
+  });
+
+  return (
+    <div className="bg-white rounded-[40px] p-6 md:p-12 border border-slate-100 shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
+            <MessageSquare size={24} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 leading-tight">Provide Student Feedback</h1>
+            <p className="text-slate-500 text-sm font-medium mt-0.5">Send academic guidance and feedback to your students</p>
+          </div>
+        </div>
+        <button className="px-8 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 whitespace-nowrap">
+          New Feedback
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
+        {syncFeedbackStudents.map((student, i) => (
+          <div key={i} className="p-8 bg-slate-50 rounded-[32px] border border-slate-100 hover:border-indigo-200 transition-all group">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm font-black text-lg">
+                  {student.name.charAt(0)}
                 </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-lg">{student.name}</h3>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{student.course}</span>
+                    <span className="w-1 h-1 rounded-full bg-slate-300 hidden sm:block" />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active {student.lastActive}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <span className={cn(
+                  "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-tight whitespace-nowrap",
+                  student.status === "Excellent Progress" ? "bg-emerald-50 text-emerald-600" : 
+                  student.status === "Needs Guidance" ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600"
+                )}>
+                  {student.status}
+                </span>
+                <button className="p-3 bg-white text-slate-400 hover:text-indigo-600 rounded-xl border border-slate-100 hover:border-indigo-100 shadow-sm transition-all shrink-0">
+                  <Send size={18} />
+                </button>
               </div>
             </div>
             
-            <div className="flex items-center gap-4">
-              <span className={cn(
-                "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-tight",
-                student.status === "Excellent Progress" ? "bg-emerald-50 text-emerald-600" : 
-                student.status === "Needs Guidance" ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600"
-              )}>
-                {student.status}
-              </span>
-              <button className="p-3 bg-white text-slate-400 hover:text-indigo-600 rounded-xl border border-slate-100 hover:border-indigo-100 shadow-sm transition-all">
-                <Send size={18} />
-              </button>
+            <div className="mt-6 pt-6 border-t border-slate-200/50">
+              <textarea 
+                placeholder={`Write feedback for ${student.name}...`}
+                className="w-full p-6 bg-white border border-slate-100 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all resize-none h-32"
+              />
+              <div className="flex justify-end mt-4">
+                <button className="flex items-center gap-2 px-8 py-3 bg-indigo-50 text-indigo-600 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">
+                  Submit Feedback
+                </button>
+              </div>
             </div>
           </div>
-          
-          <div className="mt-6 pt-6 border-t border-slate-200/50">
-            <textarea 
-              placeholder={`Write feedback for ${student.name}...`}
-              className="w-full p-4 bg-white border border-slate-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all resize-none h-24"
-            />
-            <div className="flex justify-end mt-4">
-              <button className="flex items-center gap-2 px-6 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-bold text-xs hover:bg-indigo-100 transition-all">
-                Submit Feedback
-              </button>
-            </div>
+        ))}
+        {syncFeedbackStudents.length === 0 && (
+          <div className="py-20 text-center bg-slate-50 rounded-[40px] border border-dashed border-slate-200">
+            <p className="text-slate-400 font-bold text-sm">No students assigned to your classes yet.</p>
           </div>
-        </div>
-      ))}
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const FeedbackView = () => (
   <div className="bg-white rounded-[40px] p-12 border border-slate-100 shadow-sm">
@@ -4849,33 +5379,67 @@ const FeedbackView = () => (
   </div>
 );
 
-const ResourcesView = ({ uploadedFiles, setUploadedFiles }: { uploadedFiles: any[]; setUploadedFiles: React.Dispatch<React.SetStateAction<any[]>> }) => {
+const ResourcesView = ({ uploadedFiles, userProfile, adminRole }: { uploadedFiles: any[]; userProfile: any; adminRole: string | null }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFile, setPendingFile] = useState<{ file: File; base64: string } | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("Modules");
+  const [isUploading, setIsUploading] = useState(false);
+  const [editingResource, setEditingResource] = useState<any | null>(null);
+  const [tempCategory, setTempCategory] = useState<string>("");
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPendingFile(file);
-    setSelectedCategory("Modules");
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setPendingFile({ file, base64 });
+      setSelectedCategory("Modules");
+    };
+    reader.readAsDataURL(file);
   };
 
-  const confirmUpload = () => {
-    if (!pendingFile) return;
+  const confirmUpload = async () => {
+    if (!pendingFile || !userProfile) return;
+    setIsUploading(true);
     
-    const newFile = {
-      name: pendingFile.name,
-      type: pendingFile.name.split('.').pop()?.toUpperCase() || "FILE",
-      size: (pendingFile.size / 1024).toFixed(1) + " KB",
-      category: selectedCategory,
-      items: []
-    };
-    
-    setUploadedFiles(prev => [...prev, newFile]);
-    setPendingFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    try {
+      const { file, base64 } = pendingFile;
+      const newResource = {
+        name: file.name,
+        type: file.name.split('.').pop()?.toUpperCase() || "FILE",
+        size: (file.size / 1024).toFixed(1) + " KB",
+        category: selectedCategory,
+        content: base64,
+        ownerId: String(userProfile.id || userProfile.uid),
+        date: new Date().toLocaleDateString()
+      };
+      
+      await addDoc(collection(db, "resources"), newResource);
+      setPendingFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, "resources");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleUpdateCategory = async () => {
+    if (!editingResource) return;
+    setIsUploading(true);
+    try {
+      await updateDoc(doc(db, "resources", editingResource.id), {
+        category: tempCategory
+      });
+      setEditingResource(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `resources/${editingResource.id}`);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const categories = [
@@ -4889,8 +5453,12 @@ const ResourcesView = ({ uploadedFiles, setUploadedFiles }: { uploadedFiles: any
     items: cat.items.filter(item => (item as any).name.toLowerCase().includes(searchTerm.toLowerCase()))
   }));
 
-  const handleDeleteResource = (fileName: string) => {
-    setUploadedFiles(prev => prev.filter(f => f.name !== fileName));
+  const handleDeleteResource = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, "resources", id));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `resources/${id}`);
+    }
   };
 
   return (
@@ -4920,13 +5488,15 @@ const ResourcesView = ({ uploadedFiles, setUploadedFiles }: { uploadedFiles: any
             className="hidden"
             onChange={handleFileUpload}
           />
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-          >
-            <Upload size={16} />
-            Upload File
-          </button>
+          {adminRole === "teacher" && (
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+            >
+              <Upload size={16} />
+              Upload File
+            </button>
+          )}
         </div>
 
         <div className="space-y-12">
@@ -4955,22 +5525,57 @@ const ResourcesView = ({ uploadedFiles, setUploadedFiles }: { uploadedFiles: any
                              item.category === "Course Outline" ? <MoreHorizontal size={16} /> : <FileText size={16} />}
                           </div>
                         </div>
-                        <div>
-                          <h3 className="text-lg font-black text-slate-900 leading-tight">{item.name}</h3>
-                          <p className="text-xs font-bold text-slate-400 mt-0.5">{item.type} • {item.size}</p>
+                        <div className="min-w-0">
+                          <h3 className="text-lg font-black text-slate-900 leading-tight truncate" title={item.name}>{item.name}</h3>
+                          <p className="text-xs font-bold text-slate-400 mt-0.5 whitespace-nowrap">{item.type} • {item.size}</p>
                         </div>
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        <button className="p-2.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all">
+                        <button 
+                          onClick={() => { if (item.content) window.open(item.content, '_blank'); }}
+                          className="p-2.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-100/50 transition-all"
+                          title="Open in New Tab"
+                        >
                           <ExternalLink size={18} />
                         </button>
                         <button 
-                          onClick={() => handleDeleteResource(item.name)}
-                          className="p-2.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                          onClick={() => {
+                            if (item.content) {
+                              const link = document.createElement('a');
+                              link.href = item.content;
+                              link.download = item.name;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }
+                          }}
+                          className="p-2.5 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all"
+                          title="Download"
                         >
-                          <X size={18} />
+                          <Download size={18} />
                         </button>
+                        {adminRole === "teacher" && (
+                          <>
+                            <button 
+                              onClick={() => {
+                                setEditingResource(item);
+                                setTempCategory(item.category);
+                              }}
+                              className="p-2.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                              title="Edit Category"
+                            >
+                              <Pen size={18} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteResource(item.id)}
+                              className="p-2.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                              title="Delete"
+                            >
+                              <X size={18} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -4985,6 +5590,108 @@ const ResourcesView = ({ uploadedFiles, setUploadedFiles }: { uploadedFiles: any
           ))}
         </div>
       </div>
+
+      {/* Edit Category Modal */}
+      <AnimatePresence>
+        {editingResource && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+              onClick={() => setEditingResource(null)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl p-10 border border-slate-100"
+            >
+              <div className="mb-8">
+                <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-[24px] flex items-center justify-center mb-6">
+                  <Pen size={32} />
+                </div>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Edit Category</h2>
+                <p className="text-slate-500 font-medium text-sm mt-1">Reassign "{editingResource.name}" to another section.</p>
+              </div>
+
+              <div className="space-y-3 mb-10">
+                {["Modules", "Course Outline", "Videos"].map((cat) => (
+                  <label 
+                    key={cat} 
+                    className={cn(
+                      "flex items-center justify-between p-5 rounded-[24px] border-2 transition-all cursor-pointer group",
+                      tempCategory === cat 
+                        ? "border-indigo-600 bg-indigo-50/30" 
+                        : "border-slate-100 hover:border-slate-200"
+                    )}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={cn(
+                        "w-10 h-10 rounded-xl flex items-center justify-center",
+                        tempCategory === cat ? "bg-indigo-600 text-white" : "bg-white text-slate-400 group-hover:text-slate-600"
+                      )}>
+                        {cat === "Modules" && <FileText size={20} />}
+                        {cat === "Course Outline" && <MoreHorizontal size={20} />}
+                        {cat === "Videos" && <PlayCircle size={20} />}
+                      </div>
+                      <span className={cn(
+                        "font-black text-sm uppercase tracking-widest",
+                        tempCategory === cat ? "text-indigo-600" : "text-slate-500"
+                      )}>
+                        {cat}
+                      </span>
+                    </div>
+                    <div className="relative flex items-center justify-center">
+                      <input 
+                        type="radio" 
+                        name="edit-category"
+                        className="sr-only"
+                        checked={tempCategory === cat}
+                        onChange={() => setTempCategory(cat)}
+                      />
+                      <div className={cn(
+                        "w-6 h-6 rounded-full border-2 transition-all flex items-center justify-center",
+                        tempCategory === cat ? "border-indigo-600" : "border-slate-200"
+                      )}>
+                        {tempCategory === cat && <div className="w-2.5 h-2.5 bg-indigo-600 rounded-full" />}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={handleUpdateCategory}
+                  disabled={isUploading}
+                  className="w-full py-5 bg-indigo-600 text-white rounded-[24px] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-indigo-100 hover:bg-slate-900 transition-all active:scale-[0.98] flex items-center justify-center gap-3 disabled:opacity-50"
+                >
+                  {isUploading ? (
+                    <>
+                      <RefreshCw className="animate-spin" size={18} />
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Check size={18} />
+                      Save Changes
+                    </>
+                  )}
+                </button>
+                <button 
+                  onClick={() => setEditingResource(null)}
+                  disabled={isUploading}
+                  className="w-full py-4 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-rose-500 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Category Selection Modal */}
       <AnimatePresence>
@@ -5008,7 +5715,7 @@ const ResourcesView = ({ uploadedFiles, setUploadedFiles }: { uploadedFiles: any
                   <Upload size={32} />
                 </div>
                 <h2 className="text-2xl font-black text-slate-900 tracking-tight">Select Category</h2>
-                <p className="text-slate-500 font-medium text-sm mt-1">Where should we put "{pendingFile.name}"?</p>
+                <p className="text-slate-500 font-medium text-sm mt-1">Where should we put "{pendingFile.file.name}"?</p>
               </div>
 
               <div className="space-y-3 mb-10">
@@ -5060,13 +5767,25 @@ const ResourcesView = ({ uploadedFiles, setUploadedFiles }: { uploadedFiles: any
               <div className="flex flex-col gap-3">
                 <button 
                   onClick={confirmUpload}
-                  className="w-full py-5 bg-indigo-600 text-white rounded-[24px] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-indigo-100 hover:bg-slate-900 transition-all active:scale-[0.98]"
+                  disabled={isUploading}
+                  className="w-full py-5 bg-indigo-600 text-white rounded-[24px] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-indigo-100 hover:bg-slate-900 transition-all active:scale-[0.98] flex items-center justify-center gap-3 disabled:opacity-50"
                 >
-                  Confirm Upload
+                  {isUploading ? (
+                    <>
+                      <RefreshCw className="animate-spin" size={18} />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Check size={18} />
+                      Confirm Upload
+                    </>
+                  )}
                 </button>
                 <button 
                   onClick={() => setPendingFile(null)}
-                  className="w-full py-4 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-rose-500 transition-colors"
+                  disabled={isUploading}
+                  className="w-full py-4 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-rose-500 transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -5117,16 +5836,29 @@ const MISDashboard = ({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const collectionName = activeTab === "teachers" ? "teachers" : activeTab === "students" ? "students" : "sections";
-      if (editingItem) {
-        await updateDoc(doc(db, collectionName, editingItem.id), formData);
+      let collectionName = "";
+      if (activeTab === "teachers" || activeTab === "students") {
+        collectionName = "institutionUsers";
+      } else if (activeTab === "sections") {
+        collectionName = "sections";
       } else {
+        collectionName = activeTab;
+      }
+
+      if (editingItem) {
+        await updateDoc(doc(db, collectionName, String(editingItem.id)), formData);
+      } else {
+        // If adding a user, we should probably follow the user generation local logic, 
+        // but for now let's just use addDoc if it's a generic add.
+        // Actually, MISDashboard typically just edits/deletes items that are already there.
         await addDoc(collection(db, collectionName), formData);
       }
       setIsModalOpen(false);
       setEditingItem(null);
+      addNotification?.("Success", `${activeTab.slice(0, -1)} saved successfully.`, "success");
     } catch (err) {
       console.error("Save failed", err);
+      addNotification?.("Error", "Failed to save item.", "warning");
     }
   };
 
@@ -5137,13 +5869,21 @@ const MISDashboard = ({
   const confirmDelete = async () => {
     if (!itemToDelete) return;
     try {
-      const collectionName = activeTab === "teachers" ? "teachers" : activeTab === "students" ? "students" : "sections";
-      await deleteDoc(doc(db, collectionName, itemToDelete.id));
+      let collectionName = "";
+      if (activeTab === "teachers" || activeTab === "students") {
+        collectionName = "institutionUsers";
+      } else if (activeTab === "sections") {
+        collectionName = "sections";
+      } else {
+        collectionName = activeTab;
+      }
+      
+      await deleteDoc(doc(db, collectionName, String(itemToDelete.id || itemToDelete)));
       setItemToDelete(null);
       
       addNotification?.(
         "Deleted Successfully",
-        `The ${activeTab.slice(0, -1)} has been removed from the system.`,
+        `The item has been removed from the system.`,
         "success"
       );
     } catch (err) {
@@ -5210,7 +5950,7 @@ const MISDashboard = ({
                     <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 md:px-8 py-4">
                         <p className="font-bold text-slate-900 text-xs md:text-sm">{t.name}</p>
-                        <p className="text-[9px] md:text-[10px] text-slate-400 font-mono truncate max-w-[150px] md:max-w-none">{t.email || t.id}</p>
+                        <p className="text-[9px] md:text-[10px] text-slate-400 font-mono truncate max-w-[150px] md:max-w-none">{t.email}</p>
                       </td>
                       <td className="px-6 md:px-8 py-4 text-right">
                         <span className="px-2 py-0.5 md:py-1 bg-indigo-50 text-indigo-600 text-[9px] md:text-[10px] font-bold rounded-lg uppercase whitespace-nowrap">
@@ -5330,17 +6070,21 @@ const MISDashboard = ({
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50/30 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                <th className="px-8 py-4">ID</th>
                 <th className="px-8 py-4">Name</th>
                 {activeTab === "teachers" && <th className="px-8 py-4">Position / Spec</th>}
                 {activeTab === "students" && <th className="px-8 py-4">Section</th>}
                 {activeTab === "sections" && <th className="px-8 py-4">Prog. Teacher</th>}
-                {activeTab !== "sections" && <th className="px-8 py-4">Email / ID</th>}
+                {activeTab !== "sections" && <th className="px-8 py-4">Email</th>}
                 <th className="px-8 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {(activeTab === "teachers" ? teachers : activeTab === "students" ? students : sections).map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
+                  <td className="px-8 py-5">
+                    <p className="text-xs font-mono font-medium text-indigo-600">{item.id}</p>
+                  </td>
                   <td className="px-8 py-5">
                     <p className="font-bold text-slate-900">{item.name}</p>
                   </td>
@@ -5367,7 +6111,7 @@ const MISDashboard = ({
                   )}
                   {activeTab !== "sections" && (
                     <td className="px-8 py-5">
-                      <p className="text-xs text-slate-400 font-mono">{item.email || item.id}</p>
+                      <p className="text-xs text-slate-400 font-mono">{item.email}</p>
                     </td>
                   )}
                   <td className="px-8 py-5 text-right">
@@ -5390,7 +6134,7 @@ const MISDashboard = ({
               ))}
               {(activeTab === "teachers" ? teachers : activeTab === "students" ? students : sections).length === 0 && (
                 <tr>
-                  <td colSpan={activeTab === "sections" ? 3 : 4} className="px-8 py-20 text-center">
+                  <td colSpan={activeTab === "sections" ? 4 : 5} className="px-8 py-20 text-center">
                     <div className="max-w-xs mx-auto">
                       <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-200">
                         <Plus size={32} />
@@ -5593,6 +6337,11 @@ export default function App() {
   const [teachers, setTeachers] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [sections, setSections] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [classUsers, setClassUsers] = useState<any[]>([]);
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [semesters, setSemesters] = useState<any[]>([]);
+  const [resources, setResources] = useState<any[]>([]);
 
   const [syllabus, setSyllabus] = useState<FileData | null>(null);
   const [calendarFile, setCalendarFile] = useState<FileData | null>(null);
@@ -5663,27 +6412,32 @@ export default function App() {
         try {
           const docRef = doc(db, "users", user.uid);
           const docSnap = await getDoc(docRef);
+          
+          let profileData: any = null;
           if (docSnap.exists()) {
-            const data = docSnap.data();
-            setUserProfile(data);
-            if (data.role === 'mis' || data.role === 'teacher') {
-              setAdminRole(data.role);
+            profileData = { ...docSnap.data(), id: user.uid };
+          }
+
+          // Also check institutionUsers by email/uid to get the internal ID
+          if (user.email) {
+            const q = query(collection(db, "institutionUsers"), where("email", "==", user.email));
+            const querySnap = await getDocs(q);
+            if (!querySnap.empty) {
+              const instData = querySnap.docs[0].data();
+              profileData = { 
+                ...(profileData || {}), 
+                ...instData, 
+                id: querySnap.docs[0].id // This is the numeric-like ID used in classes
+              };
+              if (instData.role === "MIS") setAdminRole("mis");
+              else if (instData.role === "Teacher") setAdminRole("teacher");
             }
-          } else {
-            // Check institutionUsers by email for provisioned accounts
-            if (user.email) {
-              const q = query(collection(db, "institutionUsers"), where("email", "==", user.email));
-              const querySnap = await getDocs(q);
-              if (!querySnap.empty) {
-                const data = querySnap.docs[0].data();
-                setUserProfile(data);
-                // Map roles (MIS/Teacher/Student) to the app's internal role system
-                if (data.role === "MIS") {
-                  setAdminRole("mis");
-                } else if (data.role === "Teacher") {
-                  setAdminRole("teacher");
-                }
-              }
+          }
+
+          if (profileData) {
+            setUserProfile(profileData);
+            if (profileData.role === 'mis' || profileData.role === 'teacher') {
+              setAdminRole(profileData.role.toLowerCase() as "mis" | "teacher");
             }
           }
         } catch (err) {
@@ -5711,20 +6465,62 @@ export default function App() {
     }
   };
 
-  // Global Listeners for Teachers and Students
+  // Global Listeners for System Data
   useEffect(() => {
     if (!user) return;
     
-    const unsub = onSnapshot(collection(db, "institutionUsers"), (snap) => {
+    const unsubUsers = onSnapshot(collection(db, "institutionUsers"), (snap) => {
       const allUsers = snap.docs.map(doc => {
         const data = doc.data();
         return { ...data, id: data.id || doc.id };
       });
-      setTeachers(allUsers.filter((u: any) => u.role === "Teacher"));
-      setStudents(allUsers.filter((u: any) => u.role === "Student"));
+      const sortedTeachers = allUsers
+        .filter((u: any) => u.role === "Teacher")
+        .sort((a: any, b: any) => (a.lastName || "").localeCompare(b.lastName || ""));
+      const sortedStudents = allUsers
+        .filter((u: any) => u.role === "Student")
+        .sort((a: any, b: any) => (a.lastName || "").localeCompare(b.lastName || ""));
+      
+      setTeachers(sortedTeachers);
+      setStudents(sortedStudents);
     }, (err) => handleFirestoreError(err, OperationType.LIST, "institutionUsers"));
 
-    return () => unsub();
+    const unsubSections = onSnapshot(collection(db, "sections"), (snap) => {
+      const sortedSections = snap.docs
+        .map(d => ({ ...d.data(), id: d.id }))
+        .sort((a: any, b: any) => (a.name || "").localeCompare(b.name || "", undefined, { numeric: true, sensitivity: 'base' }));
+      setSections(sortedSections);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, "sections"));
+
+    const unsubClasses = onSnapshot(collection(db, "classes"), (snap) => {
+      setClasses(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, "classes"));
+
+    const unsubClassUsers = onSnapshot(collection(db, "classUsers"), (snap) => {
+      setClassUsers(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, "classUsers"));
+
+    const unsubYears = onSnapshot(collection(db, "academicYears"), (snap) => {
+      setAcademicYears(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, "academicYears"));
+
+    const unsubSemesters = onSnapshot(collection(db, "semesters"), (snap) => {
+      setSemesters(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, "semesters"));
+
+    const unsubResources = onSnapshot(collection(db, "resources"), (snap) => {
+      setResources(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, "resources"));
+
+    return () => {
+      unsubUsers();
+      unsubSections();
+      unsubClasses();
+      unsubClassUsers();
+      unsubYears();
+      unsubSemesters();
+      unsubResources();
+    };
   }, [user]);
 
   const addNotification = (title: string, message: string, type: "info" | "success" | "warning" = "info") => {
@@ -5804,9 +6600,6 @@ export default function App() {
     setChatMessages(prev => [...prev, newUserMessage]);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = "gemini-1.5-flash";
-
       let prompt = "";
       const resourceContext = uploadedFiles.length > 0 
         ? `\nAVAILABLE RESOURCES (Refer to these by name when suggesting study materials): \n${uploadedFiles.map(f => `- ${f.name} (Category: ${f.category})`).join("\n")}`
@@ -5854,12 +6647,19 @@ export default function App() {
         `;
       }
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
+      const response = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, model: "gemini-3-flash-preview" })
       });
 
-      const text = response.text || "";
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "AI tweak failed");
+      }
+
+      const resData = await response.json();
+      const text = resData.text || "";
       const jsonMatch = text.match(/\[\s*\{.*\}\s*\]/s);
       
       let finalChatMessage = "";
@@ -5910,9 +6710,6 @@ export default function App() {
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = "gemini-1.5-flash";
-
       const syllabusContent = syllabus?.content || (uploadedFiles.find(f => f.category === "Course Outline")?.content) || "No syllabus provided. Please generate a general study plan for BSIT Level.";
       const calendarContent = calendarFile?.content || "No specific calendar provided. Assume 16 weeks duration.";
 
@@ -5968,15 +6765,25 @@ export default function App() {
         - For "isRecurring": false, the "start" and "end" fields should be full ISO date-time strings.
       `;
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: { tools: [{ googleSearch: {} }] },
+      const response = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          prompt, 
+          model: "gemini-3-flash-preview",
+          config: { tools: [{ googleSearch: {} }] }
+        })
       });
 
-      const text = response.text || "";
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "AI generation failed");
+      }
+
+      const resData = await response.json();
+      const text = resData.text || "";
       const jsonMatch = text.match(/\[\s*\{.*\}\s*\]/s);
-      
+
       if (jsonMatch) {
         const rawEvents = JSON.parse(jsonMatch[0]);
         const semesterStart = new Date(semesterDates.start);
@@ -6049,9 +6856,6 @@ export default function App() {
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = "gemini-3-flash-preview";
-
       const prompt = `
         Analyze this BSIT student's data for "Programming Languages" course:
         
@@ -6106,15 +6910,23 @@ export default function App() {
         }
       `;
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: { 
-          responseMimeType: "application/json",
-        },
+      const response = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          prompt, 
+          model: "gemini-3-flash-preview",
+          config: { responseMimeType: "application/json" }
+        })
       });
 
-      const data = JSON.parse(response.text);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "AI analysis failed");
+      }
+
+      const resData = await response.json();
+      const data = JSON.parse(resData.text);
       
       if (data.calendarEvents) {
         const newEvents = data.calendarEvents.map((e: any) => ({
@@ -6405,6 +7217,21 @@ export default function App() {
                 <TrendingUp size={18} className="flex-shrink-0" />
                 {!isSidebarCollapsed && <span>Performance</span>}
               </button>
+              <button 
+                onClick={() => {
+                  setActiveView("resources");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all",
+                  isSidebarCollapsed ? "justify-center px-0" : "justify-start px-4",
+                  activeView === "resources" ? "bg-indigo-50 text-indigo-600" : "text-slate-500 hover:bg-slate-50"
+                )}
+                title={isSidebarCollapsed ? "Resources" : ""}
+              >
+                <Library size={18} className="flex-shrink-0" />
+                {!isSidebarCollapsed && <span>Resources</span>}
+              </button>
             </>
           )}
         </nav>
@@ -6615,6 +7442,11 @@ export default function App() {
                 onNavigate={(view) => setActiveView(view)} 
                 onSelectSection={(section) => setTeacherSelectedSection(section)}
                 onSelectRisk={(risk) => setTeacherSelectedRisk(risk)}
+                allSections={sections}
+                allClasses={classes}
+                allStudents={students}
+                allClassUsers={classUsers}
+                userProfile={userProfile}
               />
             </motion.div>
           )}
@@ -6632,6 +7464,11 @@ export default function App() {
                   setTeacherSelectedRisk("All");
                   setActiveView("dashboard");
                 }}
+                allSections={sections}
+                allStudents={students}
+                allClasses={classes}
+                allClassUsers={classUsers}
+                userProfile={userProfile}
               />
             </motion.div>
           )}
@@ -6650,6 +7487,10 @@ export default function App() {
                   setSelectedStudentForPlan(student);
                   setActiveView("plans");
                 }}
+                allSections={sections}
+                allStudents={students}
+                allClasses={classes}
+                allClassUsers={classUsers}
               />
             </motion.div>
           )}
@@ -6668,6 +7509,11 @@ export default function App() {
                 calendarFile={calendarFile}
                 uploadedFiles={uploadedFiles}
                 semesterDates={semesterDates}
+                allSections={sections}
+                allStudents={students}
+                allClasses={classes}
+                allClassUsers={classUsers}
+                userProfile={userProfile}
               />
             </motion.div>
           )}
@@ -6679,7 +7525,13 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
             >
-              <ClassRecordsView />
+              <ClassRecordsView 
+                allSections={sections}
+                allStudents={students}
+                allClasses={classes}
+                allClassUsers={classUsers}
+                userProfile={userProfile}
+              />
             </motion.div>
           )}
 
@@ -6690,20 +7542,27 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
             >
-              <TeacherFeedbackView />
+              <TeacherFeedbackView 
+                allSections={sections}
+                allStudents={students}
+                allClasses={classes}
+                allClassUsers={classUsers}
+                userProfile={userProfile}
+              />
             </motion.div>
           )}
 
-          {adminRole === "teacher" && activeView === "resources" && (
+          {(adminRole === "teacher" || activeView === "resources") && activeView === "resources" && (
             <motion.div 
-              key="teacher-resources"
+              key="resources-view"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
             >
               <ResourcesView 
-                uploadedFiles={uploadedFiles}
-                setUploadedFiles={setUploadedFiles}
+                uploadedFiles={resources}
+                userProfile={userProfile}
+                adminRole={adminRole}
               />
             </motion.div>
           )}
@@ -6715,7 +7574,18 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
             >
-              <MISView userProfile={userProfile} activeTab={activeMisTab} setActiveTab={setActiveMisTab} addNotification={addNotification} />
+              <MISView 
+                userProfile={userProfile} 
+                activeTab={activeMisTab} 
+                setActiveTab={setActiveMisTab} 
+                addNotification={addNotification}
+                academicYears={academicYears}
+                semesters={semesters}
+                users={[...teachers, ...students]} // Combine since they were from institutionUsers
+                sections={sections}
+                classes={classes}
+                classUsers={classUsers}
+              />
             </motion.div>
           )}
 

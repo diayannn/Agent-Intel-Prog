@@ -1,8 +1,10 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import admin from "firebase-admin";
+import { GoogleGenAI } from "@google/genai";
 import firebaseConfig from "./firebase-applet-config.json";
 
 // Initialize Firebase Admin with explicit project ID
@@ -21,13 +23,61 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
+  const API_KEY = process.env.GEMINI_API_KEY;
+
+  // Gemini AI Setup
+  const genAI = new GoogleGenAI({ 
+    apiKey: API_KEY || "",
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
+
   // Health check route to verify configuration
   app.get("/api/config-check", (req, res) => {
     res.json({
       activeProjectId: admin.app().options.projectId,
       hasAuth: !!admin.auth,
-      apps: admin.apps.map(a => a.name)
+      apps: admin.apps.map(a => a.name),
+      hasGeminiKey: !!process.env.GEMINI_API_KEY
     });
+  });
+
+  // Gemini Proxy Route
+  app.post("/api/ai/generate", async (req, res) => {
+    const { prompt, model: modelName = "gemini-3-flash-preview", config } = req.body;
+    
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ 
+        error: "GEMINI_API_KEY is not set on the server. Please add your Gemini API key in the 'Settings > Secrets' panel of AI Studio Build." 
+      });
+    }
+
+    try {
+      const result = await genAI.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: config
+      });
+      res.json({ text: result.text });
+    } catch (error: any) {
+      console.error("Gemini API Error:", error);
+      let errorMessage = error.message || "Failed to generate content";
+      
+      // Specifically handle Quota/Billing errors
+      if (
+        errorMessage.includes("RESOURCE_EXHAUSTED") || 
+        errorMessage.includes("429") || 
+        errorMessage.includes("credits are depleted") ||
+        errorMessage.includes("quota")
+      ) {
+        errorMessage = "Your Gemini API quota or prepayment credits have been exhausted. Please visit https://ai.studio/projects to manage your billing or wait for the quota to reset.";
+      }
+      
+      res.status(500).json({ error: errorMessage });
+    }
   });
 
   // API Routes
@@ -119,7 +169,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*all", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
